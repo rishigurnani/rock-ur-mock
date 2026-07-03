@@ -1,61 +1,104 @@
 # Rock Ur Mock
 
-A fantasy football mock draft simulator. No AI — every bot decision is driven by four configurable sliders and is fully transparent.
+**A faster way to run a fantasy football mock draft.**
 
-## Quick start
+Rock Ur Mock is a browser-based mock draft simulator. Set up a league, tune your
+bot opponents, and draft — with no AI and no black boxes. Every pick a bot makes
+comes with a full breakdown of the math behind it.
+
+![Rock Ur Mock](docs/rock-ur-mock.png)
+
+## What is Rock Ur Mock?
+
+Rock Ur Mock lets you rehearse your fantasy draft against opponents you control.
+You configure the league (teams, rounds, roster, scoring), give each bot a
+personality, and either draft your own team or watch a full simulation play out.
+Because there's no LLM involved, drafts are deterministic and reproducible — the
+same seed always produces the same draft.
+
+## Why choose Rock Ur Mock?
+
+- **Fully transparent.** Hover any pick on the board to see the exact score
+  breakdown (value, ADP, roster need, age, and the chaos roll) that produced it.
+- **Bots you actually control.** Each bot is four sliders — ADP bias, chaos,
+  roster need, and age upside — so you can build a value-hunter, a reacher, or a
+  wildcard.
+- **Any format.** Snake or linear order, traded picks, keepers, TE-premium,
+  Superflex, IDP — all expressed as simple `If [tag] → action` rules you add or
+  remove.
+- **Runs entirely in your browser.** No account, no server, no setup beyond
+  `npm install`.
+
+## Installation
 
 ```bash
 npm install
 npm run dev       # http://localhost:5173
-npm test          # Run tests
-npm run build     # typecheck + production build
 ```
 
-## What it does
+Then open http://localhost:5173 in your browser and you're ready to draft.
 
-You set up a draft (number of teams, rounds, roster slots, scoring format), configure bot personalities, and run through a snake draft. You can pick for your own team or watch a full bot sim. Each bot pick shows a score breakdown so you can see exactly why a player was chosen.
+## Quickstart
 
-Features:
-- Snake/linear draft order, traded picks, and keeper slots (configured per cell in the Pick Matrix)
-- Scoring format modifiers: TE-premium, Superflex, IDP, etc. — each is an `If [tag] → action` rule you can add or remove
-- Bot personalities controlled by four sliders: ADP bias, chaos, roster need, age upside
-- Injury what-if overrides: zero out a player's projected points to simulate them being out
-- God-Mode traces: hover any pick on the board to see the full math behind the bot's decision
-- Swap ranking sources or upload a custom CSV
+1. **Set up the league** — pick the number of teams, rounds, roster slots, and
+   scoring format.
+2. **Tune the bots** — drag the four sliders on each team to shape how they draft.
+3. **Draft** — take your own team's picks, or hit run and watch the whole thing
+   simulate. Hover any completed pick to see why the bot chose that player.
 
-## Where saved drafts are stored
+Want an injury what-if? Zero out a player's projected points and re-run to see
+how the board shifts.
 
-Drafts are saved to your **browser's localStorage** under the key `rockurmock.sessions`. They persist across page refreshes as long as you're using the same browser on the same machine. Clearing your browser's site data will delete them.
+## Give me more!
 
-There is no server or database backend yet — the `db/schema.sql` file defines the intended PostgreSQL schema for a future backend, but it is not wired up. Everything runs client-side.
+| Feature | What it does |
+|---------|--------------|
+| **Pick Matrix** | Snake/linear order, traded picks, keepers, and per-pick timers |
+| **Modifier rules** | TE-premium, Superflex, IDP, and more as add/remove `If [tag] → action` rules |
+| **Slider bots** | Four sliders per bot define every draft personality |
+| **God-Mode traces** | The full scoring math behind every bot pick, on hover |
+| **What-if injuries** | Zero a player's projection to simulate them being out |
+| **Custom rankings** | Swap ranking sources or upload your own CSV |
 
-## How the engine works
+## Where your drafts are saved
+
+Saved drafts live in your **browser's localStorage** under the key
+`rockurmock.sessions`. They stick around across page refreshes as long as you
+use the same browser on the same machine. Clearing your browser's site data
+removes them.
+
+There's no server or database yet: `db/schema.sql` sketches the PostgreSQL schema
+for a future backend, but nothing is wired up to it. Everything runs client-side.
+
+## How the scoring works
 
 ```
 base   = (1 - adpBias) × VBD  +  adpBias × adpValue
 score  = base
        × needMultiplier    (+50% for a needed starter, −15% for a redundant position)
-       × ageMultiplier     (+30% rookie … −10% veteran, scaled by ageUpside slider)
+       × ageMultiplier     (+30% rookie … −10% veteran, scaled by ageUpside)
        × chaosRoll         (1 ± chaos × 0.40, bounded)
 ```
 
-VBD (value over baseline) is recomputed against the current available player pool on every pick, not at draft start. `roster_max` modifier rules (e.g. Superflex QB ≤ 2) are hard filters applied before scoring.
+Value-over-baseline (VBD) is recomputed against the remaining player pool on
+every pick. `roster_max` rules (e.g. Superflex QB ≤ 2) are hard filters applied
+before scoring.
 
-## Code layout
+## Resources
 
-| Area | Files |
-|------|-------|
-| Draft orchestration | `src/engine/draft.ts` |
-| Pick Matrix (order, keepers, timers) | `src/engine/matrix.ts` |
-| Modifier rules engine | `src/engine/modifiers.ts` |
-| Bot scoring | `src/engine/bot.ts`, `src/engine/vbd.ts`, `src/engine/roster.ts` |
-| Player data / CSV parsing | `src/data/datasets.ts`, `src/data/parseRankings.ts` |
-| State (Zustand store + session save/restore) | `src/store/draftStore.ts` |
+- **Code layout**
 
-The engine (`src/engine/*`) has no React imports and routes all randomness through an injectable RNG, so drafts are reproducible with a fixed seed and straightforward to unit test.
+  | Area | Files |
+  |------|-------|
+  | Draft orchestration | `src/engine/draft.ts` |
+  | Pick Matrix | `src/engine/matrix.ts` |
+  | Modifier rules | `src/engine/modifiers.ts` |
+  | Bot scoring | `src/engine/bot.ts`, `src/engine/vbd.ts`, `src/engine/roster.ts` |
+  | Player data / CSV parsing | `src/data/datasets.ts`, `src/data/parseRankings.ts` |
+  | State + session save/restore | `src/store/draftStore.ts` |
 
-## Status
-
-- Engine is complete with 15 passing tests
-- Draft room UI is working end-to-end
-- Not yet implemented: CSV upload UI, auction sub-engine, backend wiring to the DB schema
+- **Testing** — `npm test` runs the engine test suite. `npm run build`
+  typechecks and produces a production build.
+- **Engine design** — `src/engine/*` has no React imports and routes all
+  randomness through an injectable RNG, so drafts are reproducible and easy to
+  unit test.
