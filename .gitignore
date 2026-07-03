@@ -1,6 +1,7 @@
 # Data sets
 *.csv
 *.xlsx
+!src/data/FantasyPros_2026_Draft_ALL_Rankings.csv
 
 # Dependencies
 node_modules/
