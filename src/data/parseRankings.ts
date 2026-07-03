@@ -19,6 +19,7 @@ const COLUMN_ALIASES = {
   team: ['TEAM', 'TM'],
   pos: ['POS', 'POSITION'],
   rank: ['RK', 'RANK', 'ADP', 'OVERALL', 'ECR'],
+  tags: ['TAGS', 'TAG'],
 } as const;
 
 // Projected-points curve per position: points at rank 1 and per-rank decay.
@@ -87,6 +88,7 @@ export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[]
   const iTeam = findColumn(header, COLUMN_ALIASES.team);
   const iPos = findColumn(header, COLUMN_ALIASES.pos);
   const iRank = findColumn(header, COLUMN_ALIASES.rank);
+  const iTags = findColumn(header, COLUMN_ALIASES.tags);
 
   if (iName === -1 || iPos === -1) {
     throw new Error(
@@ -116,6 +118,22 @@ export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[]
 
     const adp = iRank !== -1 && Number(f[iRank]) ? Number(f[iRank]) : r;
 
+    // An explicit TAGS column (";"/"|"-separated) wins; otherwise fall back to
+    // the rookieNames set, defaulting to Veteran.
+    const explicitTags =
+      iTags !== -1
+        ? (f[iTags] ?? '')
+            .split(/[;|]/)
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : [];
+    const tags =
+      explicitTags.length > 0
+        ? explicitTags
+        : opts.rookieNames?.has(name)
+          ? ['Rookie']
+          : ['Veteran'];
+
     players.push({
       id: `${prefix}-${r}`,
       name,
@@ -123,7 +141,7 @@ export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[]
       team: f[iTeam] || 'FA',
       adp,
       projPoints: synthProjection(position, posRank),
-      tags: opts.rookieNames?.has(name) ? ['Rookie'] : ['Veteran'],
+      tags,
     });
   }
 
