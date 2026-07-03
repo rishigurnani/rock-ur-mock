@@ -1,70 +1,61 @@
-# 🏈 Rock Ur Mock
+# Rock Ur Mock
 
-An elegant, **algorithm-driven** fantasy mock draft simulator. No LLMs — every
-decision is transparent, deterministic, and fast. Four generalized primitives
-replace dozens of niche hard-coded features.
+A fantasy football mock draft simulator. No AI — every bot decision is driven by four configurable sliders and is fully transparent.
 
 ## Quick start
 
 ```bash
 npm install
 npm run dev       # http://localhost:5173
-npm test          # engine test suite (15 tests)
+npm test          # Run tests
 npm run build     # typecheck + production build
 ```
 
-## The four primitives → where they live
+## What it does
 
-| Primitive | What it generalizes | Code |
-| --- | --- | --- |
-| **Pick Matrix** | Snake / Linear / traded picks / keepers / per-cell timers | [`src/engine/matrix.ts`](src/engine/matrix.ts) |
-| **Universal Modifier Engine** | TE-Premium, Superflex, Devy/Dynasty, IDP… as `If [Tag] then [Action]` | [`src/engine/modifiers.ts`](src/engine/modifiers.ts) |
-| **Algorithmic Slider Bots** | Every AI personality = 4 sliders (ADP bias / chaos / need / age) | [`src/engine/bot.ts`](src/engine/bot.ts) |
-| **Base Data Swapper** | Ranking sources, custom CSVs, injury what-ifs | [`src/data/datasets.ts`](src/data/datasets.ts) + [`parseRankings.ts`](src/data/parseRankings.ts) |
+You set up a draft (number of teams, rounds, roster slots, scoring format), configure bot personalities, and run through a snake draft. You can pick for your own team or watch a full bot sim. Each bot pick shows a score breakdown so you can see exactly why a player was chosen.
 
-Supporting engine modules: [`vbd.ts`](src/engine/vbd.ts) (value-based drafting
-baselines), [`roster.ts`](src/engine/roster.ts) (starting-slot needs),
-[`draft.ts`](src/engine/draft.ts) (the pick-by-pick orchestrator).
+Features:
+- Snake/linear draft order, traded picks, and keeper slots (configured per cell in the Pick Matrix)
+- Scoring format modifiers: TE-premium, Superflex, IDP, etc. — each is an `If [tag] → action` rule you can add or remove
+- Bot personalities controlled by four sliders: ADP bias, chaos, roster need, age upside
+- Injury what-if overrides: zero out a player's projected points to simulate them being out
+- God-Mode traces: hover any pick on the board to see the full math behind the bot's decision
+- Swap ranking sources or upload a custom CSV
 
-## Architecture
+## Where saved drafts are stored
 
-- **Engine is pure & framework-free.** `src/engine/*` has no React imports and
-  routes all randomness through an injectable RNG, so drafts are reproducible
-  (seeded) and unit-testable. The UI is a thin renderer over it.
-- **State: Zustand** ([`src/store/draftStore.ts`](src/store/draftStore.ts)).
-  The imperative `DraftEngine` instance lives in the store; a `version` counter
-  signals React to re-read snapshots after each mutation.
-- **God-Mode traces** — every bot pick returns a `ScoreTrace` (base value, ADP
-  blend, need/age multipliers, chaos roll, final score). Hover any drafted cell
-  in the Pick Matrix to see the math.
-- **Base Data Swapper** — a dataset *registry* ([`src/data/datasets.ts`](src/data/datasets.ts))
-  where each ranking source yields `Player[]` on demand. The default loads the
-  FantasyPros 2026 CSV through a generic, header-aliased parser
-  ([`parseRankings.ts`](src/data/parseRankings.ts)) that maps any similarly-shaped
-  export and synthesizes projections from positional rank. **Adding a future
-  ranking = one line in the registry**, or a live CSV upload from the UI.
-- **Persistence:** [`db/schema.sql`](db/schema.sql). The DB persists setup and
-  results; the live engine is the source of truth mid-draft. Sparse
-  `matrix_cells` + rule-row `modifiers` keep it bloat-free.
+Drafts are saved to your **browser's localStorage** under the key `rockurmock.sessions`. They persist across page refreshes as long as you're using the same browser on the same machine. Clearing your browser's site data will delete them.
 
-## Bot Draft Score
+There is no server or database backend yet — the `db/schema.sql` file defines the intended PostgreSQL schema for a future backend, but it is not wired up. Everything runs client-side.
+
+## How the engine works
 
 ```
-base   = (1-adpBias)·VBD + adpBias·adpValue
+base   = (1 - adpBias) × VBD  +  adpBias × adpValue
 score  = base
-       × needMultiplier   (+50% needed starter … −15% redundant)
-       × ageMultiplier    (+30% rookie … −10% veteran, scaled by ageUpside)
-       × chaosRoll         (1 ± chaos·0.40, bounded)
+       × needMultiplier    (+50% for a needed starter, −15% for a redundant position)
+       × ageMultiplier     (+30% rookie … −10% veteran, scaled by ageUpside slider)
+       × chaosRoll         (1 ± chaos × 0.40, bounded)
 ```
 
-VBD baselines are recomputed once per pick (not per candidate) against the
-current pool. `roster_max` modifiers (e.g. Superflex QB ≤ 2) are hard filters.
+VBD (value over baseline) is recomputed against the current available player pool on every pick, not at draft start. `roster_max` modifier rules (e.g. Superflex QB ≤ 2) are hard filters applied before scoring.
+
+## Code layout
+
+| Area | Files |
+|------|-------|
+| Draft orchestration | `src/engine/draft.ts` |
+| Pick Matrix (order, keepers, timers) | `src/engine/matrix.ts` |
+| Modifier rules engine | `src/engine/modifiers.ts` |
+| Bot scoring | `src/engine/bot.ts`, `src/engine/vbd.ts`, `src/engine/roster.ts` |
+| Player data / CSV parsing | `src/data/datasets.ts`, `src/data/parseRankings.ts` |
+| State (Zustand store + session save/restore) | `src/store/draftStore.ts` |
+
+The engine (`src/engine/*`) has no React imports and routes all randomness through an injectable RNG, so drafts are reproducible with a fixed seed and straightforward to unit test.
 
 ## Status
 
-- ✅ Pure engine + 15 passing tests (matrix, modifiers, full-draft sim, keepers,
-  Superflex caps, human-seat pausing, seed reproducibility)
-- ✅ Working draft room: setup, modifiers, per-bot brains, snake board, human
-  picking, what-if injury overrides, keepers, God-Mode traces
-- ⏭️ Next: modular snap-to-grid widget dashboard, auction sub-engine, CSV
-  upload UI, backend wiring to `db/schema.sql`
+- Engine is complete with 15 passing tests
+- Draft room UI is working end-to-end
+- Not yet implemented: CSV upload UI, auction sub-engine, backend wiring to the DB schema
