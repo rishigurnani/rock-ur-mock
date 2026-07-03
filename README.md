@@ -54,7 +54,6 @@ how the board shifts.
 | Feature | What it does |
 |---------|--------------|
 | **Pick Matrix** | Snake/linear order, traded picks, keepers, and per-pick timers |
-| **Modifier rules** | TE-premium, Superflex, IDP, and more as add/remove `If [tag] → action` rules |
 | **Slider bots** | Four sliders per bot define every draft personality |
 | **God-Mode traces** | The full scoring math behind every bot pick, on hover |
 | **What-if injuries** | Zero a player's projection to simulate them being out |
@@ -69,20 +68,6 @@ removes them.
 
 There's no server or database yet: `db/schema.sql` sketches the PostgreSQL schema
 for a future backend, but nothing is wired up to it. Everything runs client-side.
-
-## How the scoring works
-
-```
-base   = (1 - adpBias) × VBD  +  adpBias × adpValue
-score  = base
-       × needMultiplier    (+50% for a needed starter, −15% for a redundant position)
-       × ageMultiplier     (+30% rookie … −10% veteran, scaled by ageUpside)
-       × chaosRoll         (1 ± chaos × 0.40, bounded)
-```
-
-Value-over-baseline (VBD) is recomputed against the remaining player pool on
-every pick. `roster_max` rules (e.g. Superflex QB ≤ 2) are hard filters applied
-before scoring.
 
 ## Resources
 
