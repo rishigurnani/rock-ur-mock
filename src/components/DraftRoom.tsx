@@ -1,0 +1,303 @@
+import { useMemo, useState } from 'react';
+import { useDraftStore } from '../store/draftStore';
+import { optimizeLineup } from '../engine/roster';
+import type { Player, Position } from '../types';
+
+const POSITIONS: (Position | 'ALL')[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+
+export function DraftRoom() {
+  const store = useDraftStore();
+  const { engine, players, started, config } = store;
+  const [filter, setFilter] = useState<Position | 'ALL'>('ALL');
+  const [query, setQuery] = useState('');
+  const [rosterSlot, setRosterSlot] = useState(store.humanSlot ?? 1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const playerById = useMemo(() => {
+    const m = new Map<string, Player>();
+    for (const p of players) m.set(p.id, p);
+    return m;
+  }, [players]);
+
+  // Available = engine pool once started; pre-draft shows the full list (kept
+  // players stay visible with a badge so they can be re-assigned or cleared).
+  const available: Player[] = useMemo(() => {
+    if (engine) {
+      return engine.availablePlayers().map((e) => playerById.get(e.id)!).filter(Boolean);
+    }
+    return players;
+  }, [engine, players, playerById, store.version]);
+
+  // Selected team's optimized lineup: starters by slot, bench, empty needs.
+  // Roster = completed picks + reserved keepers, so kept players show at once.
+  const lineup = useMemo(() => {
+    if (!engine || !started) return null;
+    const roster = engine
+      .teamPlayerIds(rosterSlot)
+      .map((id) => playerById.get(id))
+      .filter(Boolean) as Player[];
+    return optimizeLineup(roster, config.rosterSlots);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, started, rosterSlot, config.rosterSlots, playerById, store.version]);
+
+  // playerId -> the cell that keeps them (for badges + the keeper editor).
+  const keeperByPlayer = useMemo(() => {
+    const m = new Map<string, { round: number; teamSlot: number }>();
+    for (const c of store.cells.values()) {
+      if (c.keeperPlayerId) m.set(c.keeperPlayerId, { round: c.round, teamSlot: c.teamSlot });
+    }
+    return m;
+  }, [store.cells]);
+
+  // Universal query: every space-separated token must match the player's
+  // name, position, team, or a tag — one box does search + position + team +
+  // tag + multi-criteria filtering.
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (p: Player) =>
+    tokens.every(
+      (t) =>
+        p.name.toLowerCase().includes(t) ||
+        p.position.toLowerCase() === t ||
+        p.team.toLowerCase().includes(t) ||
+        p.tags.some((g) => g.toLowerCase().includes(t)),
+    );
+
+  const shown = available
+    .filter((p) => filter === 'ALL' || p.position === filter)
+    .filter(matches)
+    .sort((a, b) => a.adp - b.adp)
+    .slice(0, 80);
+
+  const selected = selectedId ? playerById.get(selectedId) ?? null : null;
+  const humanOnClock = engine?.isHumanOnClock ?? false;
+  const current = engine?.currentPick;
+  const complete = engine?.isComplete ?? false;
+
+  return (
+    <div className="panel">
+      <h2>
+        {started ? (complete ? 'Draft Complete' : 'Player Pool') : 'Pre-Draft Lobby'}
+      </h2>
+
+      {started && humanOnClock && current && (
+        <div className="onclock-banner">
+          <strong>You're on the clock</strong> — Round {current.round}, Pick #{current.overall}.
+          Pick a player below.
+        </div>
+      )}
+      {started && !humanOnClock && !complete && (
+        <div className="onclock-banner" style={{ borderColor: 'var(--warn)', background: 'rgba(245,158,11,0.12)' }}>
+          Bots are on the clock. Use <b>Step</b> or <b>Auto-run</b> above.
+        </div>
+      )}
+
+      {started && engine && lineup && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="row">
+            <select value={rosterSlot} onChange={(e) => setRosterSlot(Number(e.target.value))}>
+              {Array.from({ length: config.teamCount }, (_, i) => i + 1).map((s) => (
+                <option key={s} value={s}>
+                  {s === store.humanSlot ? 'My roster' : `Team ${s}`}
+                </option>
+              ))}
+            </select>
+            <span className="num">{Math.round(lineup.startingPoints)} starter pts</span>
+          </div>
+          {lineup.starters.map((seat, i) => (
+            <div className="player-row" key={i}>
+              <span className={`pos ${seat.player?.position ?? ''}`}>{seat.slot}</span>
+              <span className="name">
+                {seat.player ? seat.player.name : <em className="num">— empty —</em>}
+              </span>
+              <span className="num">{seat.player ? `${seat.player.projPoints} pts` : ''}</span>
+            </div>
+          ))}
+          {lineup.bench.length > 0 && (
+            <div className="num" style={{ marginTop: 4 }}>
+              Bench: {lineup.bench.map((p) => p.name).join(', ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      <input
+        placeholder="Search name, position, team, tag…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{ width: '100%', marginBottom: 8 }}
+      />
+
+      <div className="flex-wrap" style={{ marginBottom: 10 }}>
+        {POSITIONS.map((pos) => (
+          <button
+            key={pos}
+            className="mini"
+            style={filter === pos ? { borderColor: 'var(--accent)', background: 'var(--accent)' } : undefined}
+            onClick={() => setFilter(pos)}
+          >
+            {pos}
+          </button>
+        ))}
+      </div>
+
+      {selected && (
+        <PlayerInspector
+          key={selected.id}
+          player={selected}
+          started={started}
+          canPick={humanOnClock}
+          keeper={keeperByPlayer.get(selected.id) ?? null}
+          teamCount={config.teamCount}
+          roundCount={config.roundCount}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+
+      <div className="pool">
+        {shown.map((p) => (
+          <div
+            className={'player-row' + (p.id === selectedId ? ' selected' : '')}
+            key={p.id}
+            onClick={() => setSelectedId((cur) => (cur === p.id ? null : p.id))}
+          >
+            <span className={`pos ${p.position}`}>{p.position}</span>
+            <span>
+              <span className="name">{p.name}</span>{' '}
+              <span className="num">{p.team}</span>
+              {p.tags.includes('Rookie') && <span className="tag"> · R</span>}
+              {keeperByPlayer.has(p.id) && (
+                <span className="badge" style={{ marginLeft: 6 }}>
+                  🔒 T{keeperByPlayer.get(p.id)!.teamSlot} R{keeperByPlayer.get(p.id)!.round}
+                </span>
+              )}
+            </span>
+            <span className="num">ADP {p.adp}</span>
+            <span className="num">{p.projPoints} pts</span>
+            {started ? (
+              <button
+                className="mini primary"
+                disabled={!humanOnClock}
+                onClick={(e) => { e.stopPropagation(); store.makePick(p.id); }}
+              >
+                Draft
+              </button>
+            ) : (
+              <button className="mini">{p.id === selectedId ? 'Editing' : 'Edit'}</button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// One shared inspector for the selected player — renders in normal flow (never
+// clipped by the scrolling pool) and generalizes five actions into one surface:
+// draft, ADP override, projection override, injury what-if, and keeper assign.
+function PlayerInspector({
+  player,
+  started,
+  canPick,
+  keeper,
+  teamCount,
+  roundCount,
+  onClose,
+}: {
+  player: Player;
+  started: boolean;
+  canPick: boolean;
+  keeper: { round: number; teamSlot: number } | null;
+  teamCount: number;
+  roundCount: number;
+  onClose: () => void;
+}) {
+  const store = useDraftStore();
+  // Keeper target defaults to the player's current cell, else Team 1 / Round 1.
+  const [team, setTeam] = useState(keeper?.teamSlot ?? 1);
+  const [round, setRound] = useState(keeper?.round ?? 1);
+
+  return (
+    <div className="panel inspector">
+      <div className="row">
+        <span className="truncate">
+          <span className={`pos ${player.position}`}>{player.position}</span>{' '}
+          <b>{player.name}</b> <span className="num">{player.team}</span>
+        </span>
+        <button className="mini" onClick={onClose}>✕</button>
+      </div>
+
+      {started && (
+        <button
+          className="mini primary"
+          style={{ width: '100%', marginBottom: 8 }}
+          disabled={!canPick}
+          onClick={() => store.makePick(player.id)}
+        >
+          Draft {player.name}
+        </button>
+      )}
+
+      <div className="row">
+        <label>ADP</label>
+        <input
+          type="number"
+          defaultValue={player.adp}
+          style={{ width: 80 }}
+          onBlur={(e) => store.overridePlayer(player.id, { adp: Number(e.target.value) })}
+        />
+      </div>
+      <div className="row">
+        <label>Proj pts</label>
+        <input
+          type="number"
+          defaultValue={player.projPoints}
+          style={{ width: 80 }}
+          onBlur={(e) => store.overridePlayer(player.id, { projPoints: Number(e.target.value) })}
+        />
+      </div>
+      <button
+        className="mini"
+        style={{ width: '100%', marginTop: 6 }}
+        onClick={() => store.overridePlayer(player.id, { projPoints: 0 })}
+      >
+        💀 Injure (proj → 0)
+      </button>
+
+      {!started && (
+        <>
+          <div className="row" style={{ marginTop: 10 }}>
+            <label>Keeper</label>
+            <span>
+              <select value={team} onChange={(e) => setTeam(Number(e.target.value))}>
+                {Array.from({ length: teamCount }, (_, i) => i + 1).map((t) => (
+                  <option key={t} value={t}>T{t}</option>
+                ))}
+              </select>{' '}
+              <select value={round} onChange={(e) => setRound(Number(e.target.value))}>
+                {Array.from({ length: roundCount }, (_, i) => i + 1).map((r) => (
+                  <option key={r} value={r}>R{r}</option>
+                ))}
+              </select>
+            </span>
+          </div>
+          <button
+            className="mini primary"
+            style={{ width: '100%', marginTop: 6 }}
+            onClick={() => store.setKeeper(round, team, player.id)}
+          >
+            🔒 Keep at T{team} R{round}
+          </button>
+          {keeper && (
+            <button
+              className="mini"
+              style={{ width: '100%', marginTop: 6 }}
+              onClick={() => store.setKeeper(keeper.round, keeper.teamSlot, null)}
+            >
+              ✕ Remove keeper
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

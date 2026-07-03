@@ -1,0 +1,36 @@
+# Data sets
+*.csv
+*.xlsx
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Vite cache
+.vite/
+
+# Test coverage
+coverage/
+
+# Environment / local config
+.env
+.env.*
+!.env.example
+*.local
+.claude/settings.local.json
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
