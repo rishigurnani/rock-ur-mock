@@ -3,7 +3,7 @@
 **A faster way to run a fantasy football mock draft.**
 
 Rock Ur Mock is a browser-based mock draft simulator. Set up a league, tune your
-bot opponents, and draft — with no AI and no black boxes. Every pick a bot makes
+bot opponents, and draft. Every pick a bot makes
 comes with a full breakdown of the math behind it.
 
 ![Rock Ur Mock](docs/rock-ur-mock.png)
@@ -13,8 +13,6 @@ comes with a full breakdown of the math behind it.
 Rock Ur Mock lets you rehearse your fantasy draft against opponents you control.
 You configure the league (teams, rounds, roster, scoring), give each bot a
 personality, and either draft your own team or watch a full simulation play out.
-Because there's no LLM involved, drafts are deterministic and reproducible — the
-same seed always produces the same draft.
 
 ## Why choose Rock Ur Mock?
 
@@ -23,9 +21,6 @@ same seed always produces the same draft.
 - **Bots you actually control.** Each bot is four sliders — ADP bias, chaos,
   roster need, and age upside — so you can build a value-hunter, a reacher, or a
   wildcard.
-- **Any format.** Snake or linear order, traded picks, keepers, TE-premium,
-  Superflex, IDP — all expressed as simple `If [tag] → action` rules you add or
-  remove.
 - **Runs entirely in your browser.** No account, no server, no setup beyond
   `npm install`.
 
