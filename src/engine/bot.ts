@@ -73,6 +73,10 @@ export function scoreCandidates(
 
   // Mathematically deduce current pick number based on the depleted pool size.
   const currentPick = ctx.totalPlayerPool - ctx.available.length + 1;
+  
+  // Determine if we are currently in Round 1 or 2
+  const teams = ctx.config.teams ?? 12;
+  const isRound1Or2 = currentPick <= (teams * 2);
 
   const scored: ScoredCandidate[] = [];
 
@@ -97,8 +101,13 @@ export function scoreCandidates(
     const isRookie = player.tags.includes('Rookie');
     const ageMultiplier = 1 + (isRookie ? w.age * 0.3 : -w.age * 0.1);
 
-    // 4. Chaos: bounded ±(chaos * 40%) uniform swing.
-    const chaosRoll = 1 + (rng() * 2 - 1) * w.chaos * 0.4;
+    // 4. Chaos: bounded ±(chaos * 40%) uniform swing, but capped at ±10% in rounds 1 and 2.
+    const baseChaosWeight = w.chaos * 0.4;
+    const effectiveChaosWeight = isRound1Or2 
+      ? Math.min(baseChaosWeight, 0.10) 
+      : baseChaosWeight;
+    
+    const chaosRoll = 1 + (rng() * 2 - 1) * effectiveChaosWeight;
 
     // 5. Market Value Protection (Reach Penalty)
     // If a player's ADP is significantly later than the current pick, drafting them 
