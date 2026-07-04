@@ -73,10 +73,14 @@ export function scoreCandidates(
 
   // Mathematically deduce current pick number based on the depleted pool size.
   const currentPick = ctx.totalPlayerPool - ctx.available.length + 1;
-  
+
   // Determine if we are currently in Round 1 or 2
-  const teams = ctx.config.teams ?? 12;
+  const teams = ctx.config.teamCount;
   const isRound1Or2 = currentPick <= (teams * 2);
+
+  // Draft progress by pick count, 0..1. Used to deter early backup QB/TE picks.
+  const totalPicks = teams * ctx.config.roundCount;
+  const draftFraction = currentPick / totalPicks;
 
   const scored: ScoredCandidate[] = [];
 
@@ -117,7 +121,19 @@ export function scoreCandidates(
       ? Math.max(0.4, 1 - (pickDelta - 12) / 32)
       : 1.0;
 
-    const finalScore = baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty;
+    // 6. Early backup penalty: a second (bench) QB or TE is a poor use of a pick
+    // in the first 67% of the draft. A "backup" is a QB/TE beyond this roster's
+    // dedicated starting requirement at that position.
+    const starterReq = ctx.config.rosterSlots[player.position] ?? 0;
+    const alreadyHave = ctx.positionCounts[player.position] ?? 0;
+    const isEarlyBackup =
+      (player.position === 'QB' || player.position === 'TE') &&
+      starterReq > 0 &&
+      alreadyHave >= starterReq &&
+      draftFraction < 0.67;
+    const backupPenalty = isEarlyBackup ? 0.5 : 1.0;
+
+    const finalScore = baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty * backupPenalty;
 
     scored.push({
       player,
