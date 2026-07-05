@@ -29,6 +29,12 @@ export interface SelectContext {
   config: LeagueConfig;
   modifiers: Modifier[];
   totalPlayerPool: number;
+  /**
+   * The true overall pick number now on the clock (1-based). Must come from the
+   * engine — it can't be inferred from pool depletion, because reserved keepers
+   * are pulled out of the pool up front and would inflate the estimate.
+   */
+  currentPick: number;
   /** Picks this team has left (incl. the current one). Drives fill urgency. */
   picksLeft?: number;
   rng?: Rng;
@@ -115,8 +121,9 @@ function pickEnv(brain: Brain, ctx: SelectContext): PickEnv {
   const slots = ctx.config.rosterSlots;
   const rosterStarters = ctx.rosterPlayers.map(asStarter);
   const baseLineup = optimizeLineup(rosterStarters, slots);
-  // Current pick number, deduced from how much of the pool has been drafted.
-  const currentPick = ctx.totalPlayerPool - ctx.available.length + 1;
+  // The true overall pick, supplied by the engine (NOT inferred from pool size,
+  // which reserved keepers would inflate — breaking the round-1/2 chaos cap).
+  const currentPick = ctx.currentPick;
   const teams = ctx.config.teamCount;
   return {
     w: { adp: brain.adpBias / 100, chaos: brain.chaos / 100, need: brain.rosterNeed / 100, age: brain.ageUpside / 100 },

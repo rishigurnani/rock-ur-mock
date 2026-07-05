@@ -41,6 +41,7 @@ describe('Bot brain', () => {
       config: DEFAULT_LEAGUE,
       modifiers: [],
       totalPlayerPool: eff.length,
+      currentPick: 1,
       rng: () => 0.5,
     });
     // Highest-VBD player should be a QB (huge projection above baseline) or elite RB/WR.
@@ -57,6 +58,7 @@ describe('Bot brain', () => {
       config: DEFAULT_LEAGUE,
       modifiers: [],
       totalPlayerPool: eff.length,
+      currentPick: 1,
       rng: () => 0.5,
     });
     // With QB filled and needFirst brain, the top pick should NOT be a 2nd QB.

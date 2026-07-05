@@ -172,6 +172,7 @@ export class DraftEngine {
       config: this.config,
       modifiers: this.modifiers,
       totalPlayerPool: this.effective.length,
+      currentPick: pick.overall,
       picksLeft,
       rng: this.rng,
     });

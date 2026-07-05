@@ -25,13 +25,14 @@ const POOL: EffectivePlayer[] = [
 // Roster already holds a starting QB, so any pool QB is a backup.
 const ROSTER = [eff({ id: 'rosterQB', position: 'QB', adp: 1, projPoints: 400 })];
 
-// totalPlayerPool chosen so currentPick = totalPlayerPool - available.length + 1 = 100.
+// currentPick is pinned at 100 so only roundCount changes the draft fraction.
 const baseCtx = (roundCount: number): SelectContext => ({
   available: POOL,
   rosterPlayers: ROSTER,
   config: { ...DEFAULT_LEAGUE, teamCount: 10, roundCount },
   modifiers: [],
   totalPlayerPool: 103,
+  currentPick: 100,
   picksLeft: 5,
   rng: () => 0.5, // neutralizes the chaos roll (→ ×1)
 });
@@ -55,5 +56,30 @@ describe('early backup QB/TE penalty', () => {
     const early = scoreOf(brain, baseCtx(20), 'rbA');
     const late = scoreOf(brain, baseCtx(12), 'rbA');
     expect(early).toBeCloseTo(late, 5);
+  });
+});
+
+describe('round-1/2 chaos cap keys off the true pick, not pool depletion', () => {
+  // Deep-looking pool (as in a keeper league where keepers are pulled out up
+  // front) must NOT trick the engine into thinking it's late in the draft.
+  const ctx = (currentPick: number): SelectContext => ({
+    available: POOL,
+    rosterPlayers: [],
+    config: { ...DEFAULT_LEAGUE, teamCount: 10 },
+    modifiers: [],
+    totalPlayerPool: 200,
+    currentPick,
+    rng: () => 1, // max positive chaos swing
+  });
+  // taco = chaos 100 → weight 0.4; capped at 0.1 in rounds 1-2.
+  const chaosAt = (currentPick: number) =>
+    scoreCandidates(PRESETS.taco, ctx(currentPick))[0].trace.chaosRoll;
+
+  it('caps chaos at +10% at pick 5 (round 1)', () => {
+    expect(chaosAt(5)).toBeCloseTo(1.1, 5);
+  });
+
+  it('allows full chaos once past round 2 (pick 30)', () => {
+    expect(chaosAt(30)).toBeCloseTo(1.4, 5);
   });
 });
