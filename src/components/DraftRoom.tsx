@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useDraftStore } from '../store/draftStore';
-import { optimizeLineup } from '../engine/roster';
-import { indexById, range1 } from '../lib/util';
+import { optimizeLineup, byeClashes } from '../engine/roster';
+import { indexById, range1, playerMeta, matchesQuery } from '../lib/util';
 import type { Player, Position } from '../types';
 
 const POSITIONS: (Position | 'ALL')[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
@@ -46,22 +46,12 @@ export function DraftRoom() {
     return m;
   }, [store.cells]);
 
-  // Universal query: every space-separated token must match the player's
-  // name, position, team, or a tag — one box does search + position + team +
-  // tag + multi-criteria filtering.
+  // Universal search box (name / position / team / bye / tag; predicate in
+  // lib/util) working alongside the quick position-filter buttons.
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (p: Player) =>
-    tokens.every(
-      (t) =>
-        p.name.toLowerCase().includes(t) ||
-        p.position.toLowerCase() === t ||
-        p.team.toLowerCase().includes(t) ||
-        p.tags.some((g) => g.toLowerCase().includes(t)),
-    );
-
   const shown = available
     .filter((p) => filter === 'ALL' || p.position === filter)
-    .filter(matches)
+    .filter((p) => matchesQuery(p, tokens))
     .sort((a, b) => a.adp - b.adp)
     .slice(0, 80);
 
@@ -106,7 +96,13 @@ export function DraftRoom() {
               <span className="name">
                 {seat.player ? seat.player.name : <em className="num">— empty —</em>}
               </span>
+              <span className="num">{seat.player?.bye ? `Bye ${seat.player.bye}` : ''}</span>
               <span className="num">{seat.player ? `${seat.player.projPoints} pts` : ''}</span>
+            </div>
+          ))}
+          {byeClashes(lineup.starters.map((s) => s.player).filter(Boolean) as Player[]).map((c) => (
+            <div key={c.week} className="num" style={{ color: 'var(--warn)' }}>
+              ⚠ {c.count} starters share Bye {c.week}
             </div>
           ))}
           {lineup.bench.length > 0 && (
@@ -118,7 +114,7 @@ export function DraftRoom() {
       )}
 
       <input
-        placeholder="Search name, position, team, tag…"
+        placeholder="Search name, position, team, bye (bye9), tag…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         style={{ width: '100%', marginBottom: 8 }}
@@ -160,8 +156,7 @@ export function DraftRoom() {
             <span className={`pos ${p.position}`}>{p.position}</span>
             <span>
               <span className="name">{p.name}</span>{' '}
-              <span className="num">{p.team}</span>
-              {p.tags.includes('Rookie') && <span className="tag"> · R</span>}
+              <span className="num">{playerMeta(p)}</span>
               {keeperByPlayer.has(p.id) && (
                 <span className="badge" style={{ marginLeft: 6 }}>
                   🔒 T{keeperByPlayer.get(p.id)!.teamSlot} R{keeperByPlayer.get(p.id)!.round}
@@ -218,7 +213,7 @@ function PlayerInspector({
       <div className="row">
         <span className="truncate">
           <span className={`pos ${player.position}`}>{player.position}</span>{' '}
-          <b>{player.name}</b> <span className="num">{player.team}</span>
+          <b>{player.name}</b> <span className="num">{playerMeta(player)}</span>
         </span>
         <button className="mini" onClick={onClose}>✕</button>
       </div>

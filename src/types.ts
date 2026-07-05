@@ -18,6 +18,8 @@ export interface Player {
   adp: number;
   /** Projected fantasy points for the season under baseline scoring. */
   projPoints: number;
+  /** Bye week (1-18), when present in the source. Drives bye-stack warnings. */
+  bye?: number;
   /** Freeform tags drive the Universal Modifier Engine. e.g. ["Rookie"]. */
   tags: string[];
 }

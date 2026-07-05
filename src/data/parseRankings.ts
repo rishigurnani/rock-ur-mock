@@ -20,6 +20,7 @@ const COLUMN_ALIASES = {
   pos: ['POS', 'POSITION'],
   rank: ['RK', 'RANK', 'ADP', 'OVERALL', 'ECR'],
   tags: ['TAGS', 'TAG'],
+  bye: ['BYE WEEK', 'BYE'],
 } as const;
 
 // Projected-points curve per position: points at rank 1 and per-rank decay.
@@ -36,6 +37,11 @@ const PROJ_CURVE: Record<Position, { base: number; step: number }> = {
 function synthProjection(pos: Position, posRank: number): number {
   const { base, step } = PROJ_CURVE[pos];
   return Math.max(40, Math.round(base - step * (posRank - 1)));
+}
+
+/** A positive number from column `i`, or undefined when absent/blank/zero. */
+function numCol(f: string[], i: number): number | undefined {
+  return (i !== -1 && Number(f[i])) || undefined;
 }
 
 /** Split one CSV line, honoring double-quoted fields. */
@@ -85,6 +91,7 @@ interface Columns {
   pos: number;
   rank: number;
   tags: number;
+  bye: number;
 }
 
 /** An explicit TAGS cell wins; else fall back to rookieNames, default Veteran. */
@@ -125,6 +132,7 @@ function rowToPlayer(
     team: f[cols.team] || 'FA',
     adp: cols.rank !== -1 && Number(f[cols.rank]) ? Number(f[cols.rank]) : r,
     projPoints: synthProjection(position, posRank),
+    bye: numCol(f, cols.bye),
     tags: resolveTags(f, cols.tags, name, opts),
   };
 }
@@ -141,6 +149,7 @@ export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[]
     pos: findColumn(header, COLUMN_ALIASES.pos),
     rank: findColumn(header, COLUMN_ALIASES.rank),
     tags: findColumn(header, COLUMN_ALIASES.tags),
+    bye: findColumn(header, COLUMN_ALIASES.bye),
   };
 
   if (cols.name === -1 || cols.pos === -1) {

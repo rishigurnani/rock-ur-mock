@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { optimizeLineup, marginalStartingValue } from '../roster';
+import { optimizeLineup, marginalStartingValue, byeClashes } from '../roster';
 import type { Player } from '../../types';
 
-const mk = (id: string, position: Player['position'], projPoints: number): Player => ({
-  id, name: id, position, team: 'X', adp: 1, projPoints, tags: [],
+const mk = (id: string, position: Player['position'], projPoints: number, bye?: number): Player => ({
+  id, name: id, position, team: 'X', adp: 1, projPoints, bye, tags: [],
 });
 
 const SLOTS = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 2 };
@@ -53,5 +53,24 @@ describe('marginalStartingValue (quality-aware roster need)', () => {
     expect(marginalStartingValue(roster, mk('stud', 'RB', 260), SLOTS, base)).toBeGreaterThan(0);
     // A worse-than-everyone RB only rides the bench → zero need.
     expect(marginalStartingValue(roster, mk('scrub', 'RB', 80), SLOTS, base)).toBe(0);
+  });
+});
+
+describe('byeClashes (bye-stack warnings)', () => {
+  it('flags weeks shared by 2+ players, worst first, ignoring singletons/no-bye', () => {
+    const players = [
+      mk('a', 'RB', 100, 9), mk('b', 'WR', 100, 9), mk('c', 'TE', 100, 9), // 3 on bye 9
+      mk('d', 'RB', 100, 5), mk('e', 'WR', 100, 5), // 2 on bye 5
+      mk('f', 'QB', 100, 7), // lone bye 7
+      mk('g', 'K', 100), // no bye
+    ];
+    expect(byeClashes(players)).toEqual([
+      { week: 9, count: 3 },
+      { week: 5, count: 2 },
+    ]);
+  });
+
+  it('returns nothing when no bye is shared', () => {
+    expect(byeClashes([mk('a', 'RB', 100, 5), mk('b', 'WR', 100, 6)])).toEqual([]);
   });
 });

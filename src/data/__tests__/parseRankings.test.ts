@@ -35,6 +35,15 @@ describe('Rankings parser', () => {
     expect(players[1].position).toBe('RB');
   });
 
+  it('parses the BYE WEEK column (absent → undefined)', () => {
+    const csv = ['PLAYER NAME,POS,TEAM,RK,BYE WEEK', 'Bye Guy,RB1,ATL,1,11', 'No Bye,WR1,SF,2,'].join('\n');
+    const players = parseRankingsCsv(csv);
+    expect(players[0].bye).toBe(11);
+    expect(players[1].bye).toBeUndefined();
+    // The real FantasyPros pool carries byes for real NFL teams.
+    expect(loadDataset('fp-2026').some((p) => p.bye != null)).toBe(true);
+  });
+
   it('tags configured rookies', () => {
     const csv = ['PLAYER NAME,POS,TEAM,RK', 'Star Rookie,RB1,ATL,1'].join('\n');
     const players = parseRankingsCsv(csv, { rookieNames: new Set(['Star Rookie']) });

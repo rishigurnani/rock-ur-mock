@@ -85,3 +85,19 @@ export function marginalStartingValue(
   const withCandidate = optimizeLineup([...roster, candidate], slots).startingPoints;
   return Math.max(0, withCandidate - baseStartingValue);
 }
+
+/**
+ * Bye weeks on which two or more of the given players (typically a team's
+ * starters) all sit out at once — the signal behind bye-stack warnings. Returns
+ * `{ week, count }` for each clashing week, worst (most stacked) first.
+ */
+export function byeClashes(players: Player[]): { week: number; count: number }[] {
+  const byWeek = new Map<number, number>();
+  for (const p of players) {
+    if (p.bye) byWeek.set(p.bye, (byWeek.get(p.bye) ?? 0) + 1);
+  }
+  return [...byWeek.entries()]
+    .filter(([, count]) => count >= 2)
+    .map(([week, count]) => ({ week, count }))
+    .sort((a, b) => b.count - a.count);
+}

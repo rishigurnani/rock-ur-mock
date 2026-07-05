@@ -198,16 +198,40 @@ export function listSessions(): SessionRec[] {
 }
 const writeSessions = (l: SessionRec[]) => localStorage.setItem(SKEY, JSON.stringify(l));
 
+/** The snapshot's own dataset, or the default pool when it's gone — an uploaded
+ *  CSV lives only in memory and vanishes on reload, so `upload-*` ids won't
+ *  resolve, but its players share the standard names we can still source from. */
+function poolFor(datasetId: string): Player[] {
+  try {
+    return loadDataset(datasetId);
+  } catch {
+    return loadDataset(DEFAULT_DATASET_ID);
+  }
+}
+
+/**
+ * Backfill player attributes a snapshot predates (e.g. bye weeks, added after
+ * some drafts were saved), matched by name. Only fills gaps — never clobbers a
+ * saved value or a per-player override.
+ */
+export function hydratePlayers(players: Player[], datasetId: string): Player[] {
+  const byeByName = new Map(poolFor(datasetId).map((p) => [p.name, p.bye]));
+  return players.map((p) =>
+    p.bye == null && byeByName.get(p.name) != null ? { ...p, bye: byeByName.get(p.name) } : p,
+  );
+}
+
 /**
  * Rebuild the store patch from a snapshot — the single restore path shared by
  * "Open" (a saved session) and "Import" (a dropped JSON file). Keeper cells and
  * the whole pool ride along in the snapshot, so a restored draft is identical
- * to the one that was saved. Pure: no localStorage, so it is directly testable.
+ * to the one that was saved (older snapshots also get missing attributes like
+ * bye weeks backfilled). Directly testable: no localStorage.
  */
 export function restoreState(snap: Snapshot, version: number): Partial<DraftStore> {
   const cells = new Map<CellKey, MatrixCell>(snap.cells.map((c) => [cellKey(c.round, c.teamSlot), c]));
   const base = {
-    datasetId: snap.datasetId, players: snap.players, config: snap.config,
+    datasetId: snap.datasetId, players: hydratePlayers(snap.players, snap.datasetId), config: snap.config,
     modifiers: snap.modifiers, teams: snap.teams, cells,
     humanSlot: snap.humanSlot, seed: snap.seed,
   };

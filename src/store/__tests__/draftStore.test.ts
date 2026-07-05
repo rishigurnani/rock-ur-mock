@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { snapshot, restoreState, remapCells, confirmDiscard, type Snapshot, type DraftStore } from '../draftStore';
+import { snapshot, restoreState, remapCells, confirmDiscard, hydratePlayers, type Snapshot, type DraftStore } from '../draftStore';
 import type { Player } from '../../types';
 import { loadDataset } from '../../data/datasets';
 import { cellKey, resolvePickOrder } from '../../engine/matrix';
@@ -128,5 +128,37 @@ describe('confirmDiscard — the unsaved-work gate', () => {
   it('asks, and honors the answer, when a draft is unsaved', () => {
     expect(confirmDiscard(true, 'Reset the board', () => false)).toBe(false); // user cancels
     expect(confirmDiscard(true, 'Reset the board', () => true)).toBe(true); // user confirms
+  });
+});
+
+describe('restore backfills byes into older (pre-bye) saves', () => {
+  // Simulate a session saved before bye weeks existed: strip byes from the pool.
+  const preBye = (): DraftStore => ({
+    ...preDraftWithKeepers(),
+    players: POOL.map((p) => ({ ...p, bye: undefined })),
+  } as DraftStore);
+
+  it('hydratePlayers fills missing byes from the live dataset, keeping overrides', () => {
+    const stripped = POOL.map((p) => ({ ...p, bye: undefined, projPoints: 1 })); // 1 = an override
+    const hydrated = hydratePlayers(stripped, 'fp-2026');
+    expect(hydrated.some((p) => p.bye != null)).toBe(true); // byes restored
+    expect(hydrated.every((p) => p.projPoints === 1)).toBe(true); // overrides untouched
+  });
+
+  it('falls back to the default pool when the snapshot dataset (uploaded CSV) is gone', () => {
+    // The reported case: datasetId "upload-1" no longer registered, but the
+    // players share standard names, so byes come from the default pool.
+    const stripped = POOL.map((p) => ({ ...p, bye: undefined }));
+    expect(hydratePlayers(stripped, 'upload-1').some((p) => p.bye != null)).toBe(true);
+  });
+
+  it('leaves a player absent from every pool untouched (no throw)', () => {
+    const players = [{ id: 'x', name: 'Nobody At All', position: 'RB', team: 'FA', adp: 1, projPoints: 1, tags: [] } as Player];
+    expect(hydratePlayers(players, 'upload-gone')).toEqual(players);
+  });
+
+  it('opening a pre-bye snapshot comes back with byes', () => {
+    const patch = restoreState(throughFile(snapshot(preBye())), 1);
+    expect(patch.players!.some((p) => p.bye != null)).toBe(true);
   });
 });
