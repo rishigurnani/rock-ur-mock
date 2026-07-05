@@ -2,6 +2,7 @@ import { useDraftStore, listSessions, type SessionRec } from '../store/draftStor
 import { MODIFIER_LIBRARY } from '../data/presets';
 import { listDatasets } from '../data/datasets';
 import { BrainSliders } from './BrainSliders';
+import { range1 } from '../lib/util';
 import { useRef, useState } from 'react';
 import type { RosterSlot } from '../types';
 
@@ -150,7 +151,7 @@ export function SetupPanel() {
             disabled={store.started}
           >
             <option value="none">Spectate (all bots)</option>
-            {Array.from({ length: config.teamCount }, (_, i) => i + 1).map((s) => (
+            {range1(config.teamCount).map((s) => (
               <option key={s} value={s}>Team {s}</option>
             ))}
           </select>

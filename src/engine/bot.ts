@@ -38,6 +38,31 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Bounded ±weight uniform chaos swing; capped at ±10% early (rounds 1-2). */
+function chaosMultiplier(rng: Rng, weight: number, capEarly: boolean): number {
+  const eff = capEarly ? Math.min(weight, 0.1) : weight;
+  return 1 + (rng() * 2 - 1) * eff;
+}
+
+/** Reach penalty: fade a player whose ADP sits well past the current pick. */
+function reachPenaltyFor(effAdp: number, currentPick: number): number {
+  const delta = effAdp - currentPick;
+  return delta > 12 ? Math.max(0.4, 1 - (delta - 12) / 32) : 1.0;
+}
+
+/** Halve a backup QB/TE (beyond the starting requirement) in the first 67%. */
+function earlyBackupPenalty(
+  player: EffectivePlayer,
+  positionCounts: Partial<Record<Position, number>>,
+  config: LeagueConfig,
+  draftFraction: number,
+): number {
+  if (player.position !== 'QB' && player.position !== 'TE') return 1.0;
+  const req = config.rosterSlots[player.position] ?? 0;
+  const have = positionCounts[player.position] ?? 0;
+  return req > 0 && have >= req && draftFraction < 0.67 ? 0.5 : 1.0;
+}
+
 /**
  * Score every legal candidate and return them sorted best-first.
  * Exposed (rather than only the winner) so the UI can show the shortlist.
@@ -105,35 +130,15 @@ export function scoreCandidates(
     const isRookie = player.tags.includes('Rookie');
     const ageMultiplier = 1 + (isRookie ? w.age * 0.3 : -w.age * 0.1);
 
-    // 4. Chaos: bounded ±(chaos * 40%) uniform swing, but capped at ±10% in rounds 1 and 2.
-    const baseChaosWeight = w.chaos * 0.4;
-    const effectiveChaosWeight = isRound1Or2 
-      ? Math.min(baseChaosWeight, 0.10) 
-      : baseChaosWeight;
-    
-    const chaosRoll = 1 + (rng() * 2 - 1) * effectiveChaosWeight;
+    // 4. Chaos swing (capped early in rounds 1-2), 5. reach penalty (don't
+    // squander value on a player likely to survive the turn), and 6. the early
+    // backup-QB/TE penalty. Each is a small pure function, kept out of the loop.
+    const chaosRoll = chaosMultiplier(rng, w.chaos * 0.4, isRound1Or2);
+    const reachPenalty = reachPenaltyFor(player.effAdp, currentPick);
+    const backupPenalty = earlyBackupPenalty(player, ctx.positionCounts, ctx.config, draftFraction);
 
-    // 5. Market Value Protection (Reach Penalty)
-    // If a player's ADP is significantly later than the current pick, drafting them 
-    // now squanders value because they are mathematically likely to survive the turn.
-    const pickDelta = player.effAdp - currentPick;
-    const reachPenalty = pickDelta > 12
-      ? Math.max(0.4, 1 - (pickDelta - 12) / 32)
-      : 1.0;
-
-    // 6. Early backup penalty: a second (bench) QB or TE is a poor use of a pick
-    // in the first 67% of the draft. A "backup" is a QB/TE beyond this roster's
-    // dedicated starting requirement at that position.
-    const starterReq = ctx.config.rosterSlots[player.position] ?? 0;
-    const alreadyHave = ctx.positionCounts[player.position] ?? 0;
-    const isEarlyBackup =
-      (player.position === 'QB' || player.position === 'TE') &&
-      starterReq > 0 &&
-      alreadyHave >= starterReq &&
-      draftFraction < 0.67;
-    const backupPenalty = isEarlyBackup ? 0.5 : 1.0;
-
-    const finalScore = baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty * backupPenalty;
+    const finalScore =
+      baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty * backupPenalty;
 
     scored.push({
       player,

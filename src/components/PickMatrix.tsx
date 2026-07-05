@@ -2,16 +2,13 @@ import { useMemo } from 'react';
 import { useDraftStore } from '../store/draftStore';
 import type { CompletedPick, Player } from '../types';
 import { resolvePickOrder } from '../engine/matrix';
+import { indexById, range1 } from '../lib/util';
 
 export function PickMatrix() {
   // Subscribe to the whole store; `version` bumps re-render after engine mutations.
   const { players, config, cells, engine, version } = useDraftStore();
 
-  const playerById = useMemo(() => {
-    const m = new Map<string, Player>();
-    for (const p of players) m.set(p.id, p);
-    return m;
-  }, [players]);
+  const playerById = useMemo(() => indexById(players), [players]);
 
   // Preview order (pre-draft) or the live engine order.
   const order = useMemo(
@@ -40,8 +37,8 @@ export function PickMatrix() {
   const byRoundSlot = new Map<string, (typeof order)[number]>();
   for (const p of order) byRoundSlot.set(`${p.round}:${p.teamSlot}`, p);
 
-  const teamSlots = Array.from({ length: config.teamCount }, (_, i) => i + 1);
-  const rounds = Array.from({ length: config.roundCount }, (_, i) => i + 1);
+  const teamSlots = range1(config.teamCount);
+  const rounds = range1(config.roundCount);
 
   return (
     <div className="panel">

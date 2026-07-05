@@ -98,6 +98,64 @@ function buildEngine(s: EngineInput, picks: string[] = []): DraftEngine {
   return engine;
 }
 
+// --- Pure state transitions -------------------------------------------------
+// Each setup action delegates to one of these so the store object stays a set
+// of one-liners (and no single method accumulates all the branching).
+
+/** Load a pool and rewire keeper cells onto it. Shared by set/upload dataset. */
+function swapDataset(s: DraftStore, id: string): Partial<DraftStore> {
+  const players = loadDataset(id);
+  return { datasetId: id, players, cells: remapCells(s.cells, s.players, players), engine: null, started: false };
+}
+
+/** Rename/relabel teams for a new human seat (or spectate). */
+function renamedForSeat(teams: Team[], slot: number | null): Team[] {
+  return teams.map((t) => ({
+    ...t,
+    name: t.slot === slot ? 'You' : t.name.startsWith('Bot') || t.name === 'You' ? `Bot ${t.slot}` : t.name,
+    isBot: t.slot !== slot,
+  }));
+}
+
+/** Toggle a library modifier on/off by key. */
+function toggledModifiers(mods: Modifier[], key: keyof typeof MODIFIER_LIBRARY): Modifier[] {
+  const lib = MODIFIER_LIBRARY[key];
+  const existing = mods.find((m) => m.matchTag === lib.matchTag && m.action === lib.action);
+  return existing ? mods.filter((m) => m !== existing) : [...mods, makeModifier(key)];
+}
+
+/** Set (or clear, when playerId is null) the keeper for one board cell. */
+function withKeeper(src: Map<CellKey, MatrixCell>, round: number, teamSlot: number, playerId: string | null): Map<CellKey, MatrixCell> {
+  const cells = new Map(src);
+  const key = cellKey(round, teamSlot);
+  // A player can only be kept in one cell — clear any prior assignment.
+  if (playerId) for (const [k, c] of cells) if (c.keeperPlayerId === playerId) dropKeeper(cells, k, c);
+  const existing = cells.get(key) ?? { round, teamSlot };
+  if (playerId) cells.set(key, { ...existing, keeperPlayerId: playerId });
+  else dropKeeper(cells, key, existing);
+  return cells;
+}
+
+/** Apply a config patch, rebuilding+replaying a live draft around it. */
+function configPatch(s: DraftStore, patch: Partial<LeagueConfig>): Partial<DraftStore> {
+  const config = { ...s.config, ...patch };
+  const teams =
+    patch.teamCount && patch.teamCount !== s.config.teamCount
+      ? defaultTeams(patch.teamCount, s.humanSlot)
+      : s.teams;
+  const engine = s.started && s.engine
+    ? buildEngine({ ...s, config, teams }, s.engine.completed.map((c) => c.playerId))
+    : s.engine;
+  return { config, teams, engine, version: s.version + 1 };
+}
+
+/** Human-readable status for a saved session. */
+function sessionStatus(s: DraftStore): string {
+  const total = s.config.teamCount * s.config.roundCount;
+  const done = s.engine?.completed.length ?? 0;
+  return !s.started ? 'Setup' : done >= total ? 'Complete' : 'In progress';
+}
+
 // --- Sessions: the draft log, persisted to localStorage --------------------
 // Snapshots are SELF-CONTAINED: the whole pool is stored inline, so uploaded
 // CSVs, per-player overrides and injury what-ifs all persist, and a session is
@@ -201,84 +259,27 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   started: false,
   version: 0,
 
-  setDataset: (id) =>
-    set((s) => {
-      const players = loadDataset(id);
-      // Swapping the pool only invalidates the running draft — keeper choices
-      // survive, remapped by player name to the new rankings.
-      return { datasetId: id, players, cells: remapCells(s.cells, s.players, players), engine: null, started: false };
-    }),
+  setDataset: (id) => set((s) => swapDataset(s, id)),
 
   uploadDataset: (name, csv) => {
     const id = registerUploadedDataset(name, csv);
-    set((s) => {
-      const players = loadDataset(id);
-      return { datasetId: id, players, cells: remapCells(s.cells, s.players, players), engine: null, started: false };
-    });
+    set((s) => swapDataset(s, id));
   },
 
-  toggleModifier: (key) =>
-    set((s) => {
-      const existing = s.modifiers.find((m) => m.matchTag === MODIFIER_LIBRARY[key].matchTag && m.action === MODIFIER_LIBRARY[key].action);
-      return {
-        modifiers: existing
-          ? s.modifiers.filter((m) => m !== existing)
-          : [...s.modifiers, makeModifier(key)],
-      };
-    }),
+  toggleModifier: (key) => set((s) => ({ modifiers: toggledModifiers(s.modifiers, key) })),
 
-  setConfig: (patch) =>
-    set((s) => {
-      const config = { ...s.config, ...patch };
-      const teams =
-        patch.teamCount && patch.teamCount !== s.config.teamCount
-          ? defaultTeams(patch.teamCount, s.humanSlot)
-          : s.teams;
-      // Live: if a draft is running, rebuild it around the new config and
-      // replay the picks made so far (change rounds/roster/teams mid-draft).
-      const engine = s.started && s.engine
-        ? buildEngine({ ...s, config, teams }, s.engine.completed.map((c) => c.playerId))
-        : s.engine;
-      return { config, teams, engine, version: s.version + 1 };
-    }),
+  setConfig: (patch) => set((s) => configPatch(s, patch)),
 
-  setHumanSlot: (slot) =>
-    set((s) => ({
-      humanSlot: slot,
-      teams: s.teams.map((t) => ({
-        ...t,
-        name: t.slot === slot ? 'You' : t.name.startsWith('Bot') || t.name === 'You' ? `Bot ${t.slot}` : t.name,
-        isBot: t.slot !== slot,
-      })),
-    })),
+  setHumanSlot: (slot) => set((s) => ({ humanSlot: slot, teams: renamedForSeat(s.teams, slot) })),
 
   setBrain: (slot, brain) =>
-    set((s) => ({
-      teams: s.teams.map((t) => (t.slot === slot ? { ...t, brain } : t)),
-    })),
+    set((s) => ({ teams: s.teams.map((t) => (t.slot === slot ? { ...t, brain } : t)) })),
 
   setKeeper: (round, teamSlot, playerId) =>
-    set((s) => {
-      const cells = new Map(s.cells);
-      const key = cellKey(round, teamSlot);
-
-      // A player can only be kept in one cell — clear any prior assignment.
-      if (playerId) {
-        for (const [k, c] of cells) {
-          if (c.keeperPlayerId === playerId) dropKeeper(cells, k, c);
-        }
-      }
-
-      const existing = cells.get(key) ?? { round, teamSlot };
-      if (playerId) cells.set(key, { ...existing, keeperPlayerId: playerId });
-      else dropKeeper(cells, key, existing);
-      return { cells };
-    }),
+    set((s) => ({ cells: withKeeper(s.cells, round, teamSlot, playerId) })),
 
   overridePlayer: (playerId, patch) =>
-    set((s) => ({
-      players: s.players.map((p) => (p.id === playerId ? { ...p, ...patch } : p)),
-    })),
+    set((s) => ({ players: s.players.map((p) => (p.id === playerId ? { ...p, ...patch } : p)) })),
 
   start: () =>
     set((s) => {
@@ -290,11 +291,8 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
 
   saveSession: (name) =>
     set((s) => {
-      const total = s.config.teamCount * s.config.roundCount;
-      const done = s.engine?.completed.length ?? 0;
-      const status = !s.started ? 'Setup' : done >= total ? 'Complete' : 'In progress';
       const list = listSessions().filter((x) => x.name !== name);
-      list.push({ id: String(Date.now()), name, savedAt: Date.now(), status, snap: snapshot(s) });
+      list.push({ id: String(Date.now()), name, savedAt: Date.now(), status: sessionStatus(s), snap: snapshot(s) });
       writeSessions(list);
       return { version: s.version + 1 };
     }),

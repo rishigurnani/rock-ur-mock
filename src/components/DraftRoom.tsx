@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useDraftStore } from '../store/draftStore';
 import { optimizeLineup } from '../engine/roster';
+import { indexById, range1 } from '../lib/util';
 import type { Player, Position } from '../types';
 
 const POSITIONS: (Position | 'ALL')[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
@@ -13,11 +14,7 @@ export function DraftRoom() {
   const [rosterSlot, setRosterSlot] = useState(store.humanSlot ?? 1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const playerById = useMemo(() => {
-    const m = new Map<string, Player>();
-    for (const p of players) m.set(p.id, p);
-    return m;
-  }, [players]);
+  const playerById = useMemo(() => indexById(players), [players]);
 
   // Available = engine pool once started; pre-draft shows the full list (kept
   // players stay visible with a badge so they can be re-assigned or cleared).
@@ -95,7 +92,7 @@ export function DraftRoom() {
         <div style={{ marginBottom: 10 }}>
           <div className="row">
             <select value={rosterSlot} onChange={(e) => setRosterSlot(Number(e.target.value))}>
-              {Array.from({ length: config.teamCount }, (_, i) => i + 1).map((s) => (
+              {range1(config.teamCount).map((s) => (
                 <option key={s} value={s}>
                   {s === store.humanSlot ? 'My roster' : `Team ${s}`}
                 </option>
@@ -269,12 +266,12 @@ function PlayerInspector({
             <label>Keeper</label>
             <span>
               <select value={team} onChange={(e) => setTeam(Number(e.target.value))}>
-                {Array.from({ length: teamCount }, (_, i) => i + 1).map((t) => (
+                {range1(teamCount).map((t) => (
                   <option key={t} value={t}>T{t}</option>
                 ))}
               </select>{' '}
               <select value={round} onChange={(e) => setRound(Number(e.target.value))}>
-                {Array.from({ length: roundCount }, (_, i) => i + 1).map((r) => (
+                {range1(roundCount).map((r) => (
                   <option key={r} value={r}>R{r}</option>
                 ))}
               </select>

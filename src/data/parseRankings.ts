@@ -78,19 +78,72 @@ export interface ParseOptions {
   idPrefix?: string;
 }
 
+/** Resolved column indices for the fields we read. -1 means absent. */
+interface Columns {
+  name: number;
+  team: number;
+  pos: number;
+  rank: number;
+  tags: number;
+}
+
+/** An explicit TAGS cell wins; else fall back to rookieNames, default Veteran. */
+function resolveTags(f: string[], iTags: number, name: string, opts: ParseOptions): string[] {
+  const explicit =
+    iTags !== -1 ? (f[iTags] ?? '').split(/[;|]/).map((t) => t.trim()).filter(Boolean) : [];
+  if (explicit.length > 0) return explicit;
+  return opts.rookieNames?.has(name) ? ['Rookie'] : ['Veteran'];
+}
+
+/** Map one CSV row to a Player, or null to skip (blank name / bad position). */
+function rowToPlayer(
+  f: string[],
+  cols: Columns,
+  prefix: string,
+  r: number,
+  posCounters: Map<Position, number>,
+  opts: ParseOptions,
+): Player | null {
+  const name = f[cols.name];
+  if (!name) return null;
+
+  const rawPos = (f[cols.pos] ?? '').toUpperCase();
+  const position = rawPos.replace(/[0-9]+$/, '') as Position;
+  if (!VALID_POSITIONS.has(position)) return null;
+
+  // Positional rank: prefer the number embedded in POS (e.g. "WR12" -> 12),
+  // else fall back to a running per-position counter.
+  const embedded = parseInt(rawPos.replace(/[^0-9]/g, ''), 10);
+  const running = (posCounters.get(position) ?? 0) + 1;
+  posCounters.set(position, running);
+  const posRank = Number.isFinite(embedded) && embedded > 0 ? embedded : running;
+
+  return {
+    id: `${prefix}-${r}`,
+    name,
+    position,
+    team: f[cols.team] || 'FA',
+    adp: cols.rank !== -1 && Number(f[cols.rank]) ? Number(f[cols.rank]) : r,
+    projPoints: synthProjection(position, posRank),
+    tags: resolveTags(f, cols.tags, name, opts),
+  };
+}
+
 /** Parse a rankings CSV string into the engine's Player[] shape. */
 export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[] {
   const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 2) return [];
 
   const header = splitCsvLine(lines[0]).map((h) => h.toUpperCase());
-  const iName = findColumn(header, COLUMN_ALIASES.name);
-  const iTeam = findColumn(header, COLUMN_ALIASES.team);
-  const iPos = findColumn(header, COLUMN_ALIASES.pos);
-  const iRank = findColumn(header, COLUMN_ALIASES.rank);
-  const iTags = findColumn(header, COLUMN_ALIASES.tags);
+  const cols: Columns = {
+    name: findColumn(header, COLUMN_ALIASES.name),
+    team: findColumn(header, COLUMN_ALIASES.team),
+    pos: findColumn(header, COLUMN_ALIASES.pos),
+    rank: findColumn(header, COLUMN_ALIASES.rank),
+    tags: findColumn(header, COLUMN_ALIASES.tags),
+  };
 
-  if (iName === -1 || iPos === -1) {
+  if (cols.name === -1 || cols.pos === -1) {
     throw new Error(
       'Rankings CSV needs at least a player-name column and a position column.',
     );
@@ -101,48 +154,8 @@ export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[]
   const players: Player[] = [];
 
   for (let r = 1; r < lines.length; r++) {
-    const f = splitCsvLine(lines[r]);
-    const name = f[iName];
-    if (!name) continue;
-
-    const rawPos = (f[iPos] ?? '').toUpperCase();
-    const position = rawPos.replace(/[0-9]+$/, '') as Position;
-    if (!VALID_POSITIONS.has(position)) continue;
-
-    // Positional rank: prefer the number embedded in POS (e.g. "WR12" -> 12),
-    // else fall back to a running per-position counter.
-    const embedded = parseInt(rawPos.replace(/[^0-9]/g, ''), 10);
-    const running = (posCounters.get(position) ?? 0) + 1;
-    posCounters.set(position, running);
-    const posRank = Number.isFinite(embedded) && embedded > 0 ? embedded : running;
-
-    const adp = iRank !== -1 && Number(f[iRank]) ? Number(f[iRank]) : r;
-
-    // An explicit TAGS column (";"/"|"-separated) wins; otherwise fall back to
-    // the rookieNames set, defaulting to Veteran.
-    const explicitTags =
-      iTags !== -1
-        ? (f[iTags] ?? '')
-            .split(/[;|]/)
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : [];
-    const tags =
-      explicitTags.length > 0
-        ? explicitTags
-        : opts.rookieNames?.has(name)
-          ? ['Rookie']
-          : ['Veteran'];
-
-    players.push({
-      id: `${prefix}-${r}`,
-      name,
-      position,
-      team: f[iTeam] || 'FA',
-      adp,
-      projPoints: synthProjection(position, posRank),
-      tags,
-    });
+    const player = rowToPlayer(splitCsvLine(lines[r]), cols, prefix, r, posCounters, opts);
+    if (player) players.push(player);
   }
 
   return players;

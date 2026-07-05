@@ -51,15 +51,12 @@ export function BrainSliders({
   );
 }
 
+const sameBrain = (a: Brain, b: Brain) =>
+  (Object.keys(a) as (keyof Brain)[]).every((k) => a[k] === b[k]);
+
 function matchPreset(brain: Brain): string {
   for (const [name, p] of Object.entries(PRESETS)) {
-    if (
-      p.adpBias === brain.adpBias &&
-      p.chaos === brain.chaos &&
-      p.rosterNeed === brain.rosterNeed &&
-      p.ageUpside === brain.ageUpside
-    )
-      return name;
+    if (sameBrain(p, brain)) return name;
   }
   return 'custom';
 }
