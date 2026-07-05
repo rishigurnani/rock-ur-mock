@@ -3,7 +3,6 @@ import { DraftEngine } from '../draft';
 import { cellKey } from '../matrix';
 import { scoreCandidates, PRESETS } from '../bot';
 import { applyModifiers } from '../modifiers';
-import { emptyRoster, fillsStartingSlot } from '../roster';
 import { loadDataset } from '../../data/datasets';
 import { DEFAULT_LEAGUE, makeModifier } from '../../data/presets';
 import type { Team } from '../../types';
@@ -38,8 +37,7 @@ describe('Bot brain', () => {
     const eff = applyModifiers(POOL, []);
     const scored = scoreCandidates(PRESETS.vbdRobot, {
       available: eff,
-      roster: emptyRoster(),
-      positionCounts: {},
+      rosterPlayers: [],
       config: DEFAULT_LEAGUE,
       modifiers: [],
       totalPlayerPool: eff.length,
@@ -52,11 +50,10 @@ describe('Bot brain', () => {
 
   it('roster-need bonus favors an empty starting slot', () => {
     const eff = applyModifiers(POOL, []);
-    const rosterWithQB = { counts: { QB: 1, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 } };
+    const startingQb = eff.find((p) => p.position === 'QB')!; // roster's QB slot filled
     const scoredNeed = scoreCandidates(PRESETS.needFirst, {
       available: eff,
-      roster: rosterWithQB,
-      positionCounts: { QB: 1 },
+      rosterPlayers: [startingQb],
       config: DEFAULT_LEAGUE,
       modifiers: [],
       totalPlayerPool: eff.length,
@@ -213,11 +210,10 @@ describe('Full draft simulation', () => {
       players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, cells, rng: seeded(1),
     });
 
-    // Before a single pick, team 2 already "has" its keeper QB...
+    // Before a single pick, team 2 already "has" its keeper QB, counted toward
+    // its roster (so the bot sees the QB slot as filled, no need bonus for QB).
     expect(engine.teamPlayerIds(2)).toContain(keeperQb);
     expect(engine.rosterFor(2).counts.QB).toBe(1);
-    // ...so its QB starting slot reads as already filled (no need bonus for QB).
-    expect(fillsStartingSlot(engine.rosterFor(2), 'QB', DEFAULT_LEAGUE)).toBe(false);
   });
 
   it('pauses for a human seat instead of auto-picking', () => {

@@ -22,11 +22,13 @@ const POOL: EffectivePlayer[] = [
   eff({ id: 'rbB', position: 'RB', adp: 53, projPoints: 240 }),
 ];
 
+// Roster already holds a starting QB, so any pool QB is a backup.
+const ROSTER = [eff({ id: 'rosterQB', position: 'QB', adp: 1, projPoints: 400 })];
+
 // totalPlayerPool chosen so currentPick = totalPlayerPool - available.length + 1 = 100.
 const baseCtx = (roundCount: number): SelectContext => ({
   available: POOL,
-  roster: { counts: { QB: 1, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 } },
-  positionCounts: { QB: 1 }, // already have the QB starter → any QB is a backup
+  rosterPlayers: ROSTER,
   config: { ...DEFAULT_LEAGUE, teamCount: 10, roundCount },
   modifiers: [],
   totalPlayerPool: 103,

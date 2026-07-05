@@ -9,7 +9,7 @@
 import type { Brain, LeagueConfig, Player, Position, ScoreTrace } from '../types';
 import type { EffectivePlayer } from './modifiers';
 import { computeBaselines, vbdOf } from './vbd';
-import { fillsStartingSlot, unfilledStarterCount, RosterState } from './roster';
+import { optimizeLineup, marginalStartingValue } from './roster';
 import { rosterMaxByMatch, violatesRosterMax } from './modifiers';
 import type { Modifier } from '../types';
 
@@ -24,8 +24,8 @@ export interface ScoredCandidate {
 
 export interface SelectContext {
   available: EffectivePlayer[];
-  roster: RosterState;
-  positionCounts: Partial<Record<Position, number>>;
+  /** This team's current roster (completed picks + reserved keepers). */
+  rosterPlayers: EffectivePlayer[];
   config: LeagueConfig;
   modifiers: Modifier[];
   totalPlayerPool: number;
@@ -37,6 +37,16 @@ export interface SelectContext {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+/** Tally a roster by position (for roster_max caps and the backup penalty). */
+function countByPosition(players: { position: Position }[]): Partial<Record<Position, number>> {
+  const counts: Partial<Record<Position, number>> = {};
+  for (const p of players) counts[p.position] = (counts[p.position] ?? 0) + 1;
+  return counts;
+}
+
+/** View an effective player through the lineup optimizer's projected-points lens. */
+const asStarter = (p: EffectivePlayer): Player => ({ ...p, projPoints: p.effProjPoints });
 
 /** Bounded ±weight uniform chaos swing; capped at ±10% early (rounds 1-2). */
 function chaosMultiplier(rng: Rng, weight: number, capEarly: boolean): number {
@@ -71,94 +81,110 @@ export function scoreCandidates(
   brain: Brain,
   ctx: SelectContext,
 ): ScoredCandidate[] {
-  const rng = ctx.rng ?? Math.random;
-  const w = {
-    adp: brain.adpBias / 100,
-    chaos: brain.chaos / 100,
-    need: brain.rosterNeed / 100,
-    age: brain.ageUpside / 100,
-  };
-
-  // Baselines recomputed once per pick against the current pool — not per
-  // candidate (that would be O(n^2)).
-  const baselines = computeBaselines(ctx.available, ctx.config);
-  const caps = rosterMaxByMatch(ctx.modifiers);
-
-  // Roster-completion pressure: the fraction of this team's remaining picks
-  // that MUST become starters. As it approaches 1, filling an open mandatory
-  // slot (e.g. the neglected K/DST) outweighs raw value — so bots field a legal
-  // lineup instead of hoarding skill players. Independent of the sliders.
-  const unfilled = unfilledStarterCount(ctx.roster.counts, ctx.config.rosterSlots);
-  const pressure = Math.min(1, unfilled / Math.max(ctx.picksLeft ?? 999, 1));
-
-  // Derive draft progress using only the player pool size.
-  // If more than half the player pool remains, we are in the early stages.
-  const isEarlyDraft = ctx.available.length > (ctx.totalPlayerPool / 2);
-  const redundancyBuffer = isEarlyDraft ? 0.125 : 0.25;
-
-  // Mathematically deduce current pick number based on the depleted pool size.
-  const currentPick = ctx.totalPlayerPool - ctx.available.length + 1;
-
-  // Determine if we are currently in Round 1 or 2
-  const teams = ctx.config.teamCount;
-  const isRound1Or2 = currentPick <= (teams * 2);
-
-  // Draft progress by pick count, 0..1. Used to deter early backup QB/TE picks.
-  const totalPicks = teams * ctx.config.roundCount;
-  const draftFraction = currentPick / totalPicks;
-
+  const env = pickEnv(brain, ctx);
   const scored: ScoredCandidate[] = [];
-
   for (const player of ctx.available) {
     // Hard filter: roster_max caps (Superflex QB<=2, etc.).
-    if (violatesRosterMax(player, ctx.positionCounts, caps)) continue;
-
-    // 1. Base value: Changed from a linear slope to a steep 4th-degree power curve.
-    // This exponentially drops the value of deeper players so a need multiplier can't cause massive reaches.
-    const vbd = vbdOf(player, baselines);
-    const adpFraction = 1 - player.effAdp / ctx.totalPlayerPool;
-    const adpValue = Math.pow(Math.max(0, adpFraction), 4) * 100; 
-    const baseValue = (1 - w.adp) * vbd + w.adp * adpValue;
-
-    // 2. Roster-need: Apply the redundancy buffer if the player isn't an immediate starter.
-    const needed = fillsStartingSlot(ctx.roster, player.position, ctx.config);
-    const needMultiplier = needed
-      ? 1 + w.need * 0.025 + pressure * 0.5
-      : 1 - redundancyBuffer;
-
-    // 3. Age/upside tilt.
-    const isRookie = player.tags.includes('Rookie');
-    const ageMultiplier = 1 + (isRookie ? w.age * 0.3 : -w.age * 0.1);
-
-    // 4. Chaos swing (capped early in rounds 1-2), 5. reach penalty (don't
-    // squander value on a player likely to survive the turn), and 6. the early
-    // backup-QB/TE penalty. Each is a small pure function, kept out of the loop.
-    const chaosRoll = chaosMultiplier(rng, w.chaos * 0.4, isRound1Or2);
-    const reachPenalty = reachPenaltyFor(player.effAdp, currentPick);
-    const backupPenalty = earlyBackupPenalty(player, ctx.positionCounts, ctx.config, draftFraction);
-
-    const finalScore =
-      baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty * backupPenalty;
-
-    scored.push({
-      player,
-      finalScore,
-      trace: {
-        playerId: player.id,
-        baseValue: round2(baseValue),
-        adpBlendLabel: `${Math.round(w.adp * 100)}% ADP / ${Math.round(
-          (1 - w.adp) * 100,
-        )}% VBD`,
-        needMultiplier: round2(needMultiplier),
-        ageMultiplier: round2(ageMultiplier),
-        chaosRoll: round2(chaosRoll),
-        finalScore: round2(finalScore),
-      },
-    });
+    if (violatesRosterMax(player, env.positionCounts, env.caps)) continue;
+    scored.push(scoreOne(player, env));
   }
-
   scored.sort((a, b) => b.finalScore - a.finalScore);
   return scored;
+}
+
+/** Everything derivable ONCE per pick — computed here, reused for every candidate. */
+interface PickEnv {
+  w: { adp: number; chaos: number; need: number; age: number };
+  baselines: ReturnType<typeof computeBaselines>;
+  caps: ReturnType<typeof rosterMaxByMatch>;
+  positionCounts: Partial<Record<Position, number>>;
+  config: LeagueConfig;
+  totalPlayerPool: number;
+  rosterStarters: Player[];
+  slots: LeagueConfig['rosterSlots'];
+  baseStartingValue: number;
+  pressure: number;
+  redundancyBuffer: number;
+  currentPick: number;
+  isRound1Or2: boolean;
+  draftFraction: number;
+  rng: Rng;
+}
+
+function pickEnv(brain: Brain, ctx: SelectContext): PickEnv {
+  const slots = ctx.config.rosterSlots;
+  const rosterStarters = ctx.rosterPlayers.map(asStarter);
+  const baseLineup = optimizeLineup(rosterStarters, slots);
+  // Current pick number, deduced from how much of the pool has been drafted.
+  const currentPick = ctx.totalPlayerPool - ctx.available.length + 1;
+  const teams = ctx.config.teamCount;
+  return {
+    w: { adp: brain.adpBias / 100, chaos: brain.chaos / 100, need: brain.rosterNeed / 100, age: brain.ageUpside / 100 },
+    // Baselines recomputed once per pick against the current pool, not per candidate.
+    baselines: computeBaselines(ctx.available, ctx.config),
+    caps: rosterMaxByMatch(ctx.modifiers),
+    positionCounts: countByPosition(ctx.rosterPlayers),
+    config: ctx.config,
+    totalPlayerPool: ctx.totalPlayerPool,
+    rosterStarters,
+    slots,
+    baseStartingValue: baseLineup.startingPoints,
+    // Completion pressure: fraction of remaining picks that MUST become starters,
+    // so bots fill a legal lineup (K/DST) late instead of hoarding skill players.
+    pressure: Math.min(1, baseLineup.unfilled.length / Math.max(ctx.picksLeft ?? 999, 1)),
+    // Early draft (over half the pool left) tolerates more redundancy.
+    redundancyBuffer: ctx.available.length > ctx.totalPlayerPool / 2 ? 0.125 : 0.25,
+    currentPick,
+    isRound1Or2: currentPick <= teams * 2,
+    draftFraction: currentPick / (teams * ctx.config.roundCount),
+    rng: ctx.rng ?? Math.random,
+  };
+}
+
+/** Score one candidate against the per-pick environment. Fully explainable. */
+function scoreOne(player: EffectivePlayer, env: PickEnv): ScoredCandidate {
+  const { w } = env;
+
+  // 1. Base value: a steep 4th-degree ADP power curve so a need multiplier can't
+  // cause massive reaches on deep players.
+  const vbd = vbdOf(player, env.baselines);
+  const adpValue = Math.pow(Math.max(0, 1 - player.effAdp / env.totalPlayerPool), 4) * 100;
+  const baseValue = (1 - w.adp) * vbd + w.adp * adpValue;
+
+  // 2. Roster-need (quality-aware): startImpact is the share of this player's
+  // value that would reach our optimized STARTING lineup — 1 for a brand-new
+  // starter or an upgrade over a weak keeper, 0 for pure bench depth. Need
+  // rewards lineup impact (slider- and urgency-scaled) and fades redundancy.
+  const msv = marginalStartingValue(env.rosterStarters, asStarter(player), env.slots, env.baseStartingValue);
+  const startImpact = player.effProjPoints > 0 ? Math.min(1, msv / player.effProjPoints) : 0;
+  const needMultiplier =
+    1 + (w.need * 0.3 + env.pressure * 0.5) * startImpact - env.redundancyBuffer * (1 - startImpact);
+
+  // 3. Age/upside tilt.
+  const ageMultiplier = 1 + (player.tags.includes('Rookie') ? w.age * 0.3 : -w.age * 0.1);
+
+  // 4. Chaos swing (capped early), 5. reach penalty (don't squander value on a
+  // player likely to survive the turn), 6. early backup-QB/TE penalty.
+  const chaosRoll = chaosMultiplier(env.rng, w.chaos * 0.4, env.isRound1Or2);
+  const reachPenalty = reachPenaltyFor(player.effAdp, env.currentPick);
+  const backupPenalty = earlyBackupPenalty(player, env.positionCounts, env.config, env.draftFraction);
+
+  const finalScore =
+    baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty * backupPenalty;
+
+  return {
+    player,
+    finalScore,
+    trace: {
+      playerId: player.id,
+      baseValue: round2(baseValue),
+      adpBlendLabel: `${Math.round(w.adp * 100)}% ADP / ${Math.round((1 - w.adp) * 100)}% VBD`,
+      needMultiplier: round2(needMultiplier),
+      ageMultiplier: round2(ageMultiplier),
+      chaosRoll: round2(chaosRoll),
+      finalScore: round2(finalScore),
+    },
+  };
 }
 
 /** Pick the single best candidate for a bot. Returns null if none are legal. */

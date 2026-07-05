@@ -163,11 +163,12 @@ export class DraftEngine {
       if (this.order[i].owningTeamSlot === pick.owningTeamSlot) picksLeft++;
     }
 
-    const counts = this.countsFor(pick.owningTeamSlot);
+    const rosterPlayers = this.teamPlayerIds(pick.owningTeamSlot)
+      .map((id) => this.byId.get(id))
+      .filter((p): p is EffectivePlayer => !!p);
     const choice = selectPick(team.brain, {
       available: this.availablePlayers(),
-      roster: { counts },
-      positionCounts: counts,
+      rosterPlayers,
       config: this.config,
       modifiers: this.modifiers,
       totalPlayerPool: this.effective.length,

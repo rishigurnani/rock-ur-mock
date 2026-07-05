@@ -1,7 +1,10 @@
-# Data sets
+# Added by Rishi
 *.csv
 *.xlsx
 !src/data/FantasyPros_2026_Draft_ALL_Rankings.csv
+.claude/
+.mcp.json
+.repowise/
 
 # Dependencies
 node_modules/

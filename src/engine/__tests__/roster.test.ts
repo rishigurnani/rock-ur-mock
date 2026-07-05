@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { optimizeLineup, unfilledStarterCount } from '../roster';
+import { optimizeLineup, marginalStartingValue } from '../roster';
 import type { Player } from '../../types';
 
 const mk = (id: string, position: Player['position'], projPoints: number): Player => ({
@@ -36,10 +36,22 @@ describe('Lineup engine', () => {
     expect(lu.unfilled).toContain('RB');
   });
 
-  it('unfilledStarterCount counts open slots incl. flex, from counts alone', () => {
-    // Nothing drafted: 1+2+2+1+1(flex)+1+1 = 9 open starting slots.
-    expect(unfilledStarterCount({ QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 }, SLOTS)).toBe(9);
-    // Overflow RB fills the FLEX: QB+2RB+extra WRs etc.
-    expect(unfilledStarterCount({ QB: 1, RB: 3, WR: 2, TE: 1, K: 1, DST: 1 }, SLOTS)).toBe(0);
+});
+
+describe('marginalStartingValue (quality-aware roster need)', () => {
+  it('adds a candidate at full value when it fills an empty starting slot', () => {
+    const roster = [mk('qb1', 'QB', 300)]; // RB slots wide open
+    expect(marginalStartingValue(roster, mk('rb', 'RB', 200), SLOTS)).toBe(200);
+  });
+
+  it('still sees need behind bench-caliber keepers, but ignores a scrub', () => {
+    // Keeper league: three RBs already rostered, but all bench-caliber.
+    const roster = [mk('rb1', 'RB', 120), mk('rb2', 'RB', 110), mk('rb3', 'RB', 100)];
+    const base = optimizeLineup(roster, SLOTS).startingPoints;
+
+    // A starting-caliber RB upgrades the lineup → real need, despite "enough" RBs.
+    expect(marginalStartingValue(roster, mk('stud', 'RB', 260), SLOTS, base)).toBeGreaterThan(0);
+    // A worse-than-everyone RB only rides the bench → zero need.
+    expect(marginalStartingValue(roster, mk('scrub', 'RB', 80), SLOTS, base)).toBe(0);
   });
 });

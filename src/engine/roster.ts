@@ -3,7 +3,7 @@
 // Feeds the bot's "Roster Needs" slider and enforces roster_max caps.
 // ============================================================================
 
-import type { LeagueConfig, Player, Position, RosterSlot } from '../types';
+import type { Player, Position, RosterSlot } from '../types';
 
 const FLEX_ELIGIBLE: Position[] = ['RB', 'WR', 'TE'];
 
@@ -13,44 +13,6 @@ const STARTER_SLOTS: RosterSlot[] = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DST']
 export interface RosterState {
   /** Players drafted, by position. */
   counts: Record<Position, number>;
-}
-
-export function emptyRoster(): RosterState {
-  return { counts: { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 } };
-}
-
-export function addToRoster(state: RosterState, pos: Position): RosterState {
-  return { counts: { ...state.counts, [pos]: state.counts[pos] + 1 } };
-}
-
-/**
- * Does drafting `pos` fill a still-empty STARTING slot (dedicated or FLEX)?
- * This is the signal behind the roster-need bonus.
- */
-export function fillsStartingSlot(
-  state: RosterState,
-  pos: Position,
-  config: LeagueConfig,
-): boolean {
-  const slots = config.rosterSlots;
-  const have = state.counts[pos];
-
-  // 1. Dedicated starting slot at this position still open?
-  const dedicated = slots[pos] ?? 0;
-  if (have < dedicated) return true;
-
-  // 2. Otherwise, is there an open FLEX slot this position can fill?
-  if (!FLEX_ELIGIBLE.includes(pos)) return false;
-  const flexSlots = slots.FLEX ?? 0;
-  if (flexSlots === 0) return false;
-
-  // FLEX is open if flex-eligible players beyond their dedicated slots < FLEX.
-  let flexUsed = 0;
-  for (const fp of FLEX_ELIGIBLE) {
-    const overflow = state.counts[fp] - (slots[fp] ?? 0);
-    if (overflow > 0) flexUsed += overflow;
-  }
-  return flexUsed < flexSlots;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,21 +66,22 @@ export function optimizeLineup(
 }
 
 /**
- * How many starting slots are still empty, from position counts alone (no
- * player objects needed). Drives the bots' end-of-draft urgency to fill scarce
- * mandatory positions like K and DST.
+ * Marginal starting-lineup value of adding `candidate` to `roster`: the gain in
+ * optimized starting points. Zero for pure bench depth (a redundant player who
+ * can't crack the lineup), positive when the candidate fills an empty slot OR
+ * upgrades a weak starter.
+ *
+ * This is the quality-aware replacement for count-based positional need: it
+ * still wants a starting-caliber RB even when the roster already holds three
+ * bench-caliber RBs (e.g. keepers), and it ignores a scrub who would only ride
+ * the bench — something raw position counts can never see.
  */
-export function unfilledStarterCount(
-  counts: Record<Position, number>,
+export function marginalStartingValue(
+  roster: Player[],
+  candidate: Player,
   slots: Partial<Record<RosterSlot, number>>,
+  baseStartingValue = optimizeLineup(roster, slots).startingPoints,
 ): number {
-  let unfilled = 0;
-  let flexOverflow = 0;
-  for (const pos of ['QB', 'RB', 'WR', 'TE', 'K', 'DST'] as Position[]) {
-    const need = slots[pos] ?? 0;
-    if (counts[pos] < need) unfilled += need - counts[pos];
-    else if (FLEX_ELIGIBLE.includes(pos)) flexOverflow += counts[pos] - need;
-  }
-  const flex = slots.FLEX ?? 0;
-  return unfilled + Math.max(0, flex - flexOverflow);
+  const withCandidate = optimizeLineup([...roster, candidate], slots).startingPoints;
+  return Math.max(0, withCandidate - baseStartingValue);
 }
