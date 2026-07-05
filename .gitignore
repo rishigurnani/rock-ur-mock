@@ -5,6 +5,7 @@
 .claude/
 .mcp.json
 .repowise/
+repowise.md
 
 # Dependencies
 node_modules/

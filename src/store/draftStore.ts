@@ -146,7 +146,23 @@ function configPatch(s: DraftStore, patch: Partial<LeagueConfig>): Partial<Draft
   const engine = s.started && s.engine
     ? buildEngine({ ...s, config, teams }, s.engine.completed.map((c) => c.playerId))
     : s.engine;
-  return { config, teams, engine, version: s.version + 1 };
+  // A mid-draft config change edits the live draft, so it becomes unsaved.
+  return { config, teams, engine, version: s.version + 1, dirty: s.started || s.dirty };
+}
+
+/**
+ * The single gate every action that would throw away an unsaved in-progress
+ * draft passes through. Returns true to proceed: silent when there's nothing to
+ * lose (or outside a browser), otherwise a native confirm. Keeping this here —
+ * not in the components — means the whole app gains data-loss protection without
+ * a single new dialog, effect, or prop in the UI.
+ */
+type Confirmer = (message: string) => boolean;
+const nativeConfirm: Confirmer = (msg) => (typeof window === 'undefined' ? true : window.confirm(msg));
+
+export function confirmDiscard(dirty: boolean, action: string, ask: Confirmer = nativeConfirm): boolean {
+  if (!dirty) return true;
+  return ask(`You have an unsaved draft. ${action} anyway?`);
 }
 
 /** Human-readable status for a saved session. */
@@ -220,6 +236,7 @@ export interface DraftStore {
   engine: DraftEngine | null;
   started: boolean;
   version: number; // bump to force re-render after imperative engine mutation
+  dirty: boolean; // an in-progress draft has unsaved changes (guards data loss)
 
   // setup actions
   setDataset: (id: string) => void;
@@ -245,6 +262,62 @@ export interface DraftStore {
   makePick: (playerId: string) => void;
 }
 
+// --- Imperative actions (engine mutation + session I/O) ---------------------
+// Extracted from the store object so the create() body stays a flat list of
+// delegations. Each takes zustand's get/set; the discard gate lives inline.
+type StoreGet = () => DraftStore;
+type StoreSet = (patch: Partial<DraftStore> | ((s: DraftStore) => Partial<DraftStore>)) => void;
+
+function startDraft(set: StoreSet) {
+  set((s) => {
+    // Fresh seed each run → repeated mocks differ; the stored seed keeps any one
+    // draft perfectly reproducible.
+    const seed = (Math.random() * 2 ** 32) >>> 0;
+    return { seed, engine: buildEngine({ ...s, seed }), started: true, dirty: true, version: s.version + 1 };
+  });
+}
+
+function persistSession(name: string, get: StoreGet, set: StoreSet) {
+  const s = get();
+  const list = listSessions().filter((x) => x.name !== name);
+  list.push({ id: String(Date.now()), name, savedAt: Date.now(), status: sessionStatus(s), snap: snapshot(s) });
+  writeSessions(list);
+  set({ dirty: false, version: s.version + 1 }); // saving clears unsaved changes
+}
+
+function openSession(id: string, get: StoreGet, set: StoreSet) {
+  if (!confirmDiscard(get().dirty, 'Open a saved draft')) return;
+  const rec = listSessions().find((x) => x.id === id);
+  if (rec) set((s) => ({ ...restoreState(rec.snap, s.version + 1), dirty: false }));
+}
+
+// Import = add to the log AND make it the active draft (dropping a file is the
+// same intent as opening it), so keepers/picks show immediately.
+function appendSession(rec: SessionRec, get: StoreGet, set: StoreSet) {
+  if (!confirmDiscard(get().dirty, 'Import a draft')) return;
+  writeSessions([...listSessions(), { ...rec, id: String(Date.now()) }]);
+  set((s) => ({ ...restoreState(rec.snap, s.version + 1), dirty: false }));
+}
+
+function removeSession(id: string, set: StoreSet) {
+  if (typeof window !== 'undefined' && !window.confirm('Delete this saved draft permanently?')) return;
+  writeSessions(listSessions().filter((x) => x.id !== id));
+  set((s) => ({ version: s.version + 1 }));
+}
+
+function resetBoard(get: StoreGet, set: StoreSet) {
+  if (!confirmDiscard(get().dirty, 'Reset the board')) return;
+  set({ engine: null, started: false, dirty: false, version: get().version + 1 });
+}
+
+/** Mutate the live engine via `run`, then flag unsaved changes + re-render. */
+function advance(get: StoreGet, set: StoreSet, run: (e: DraftEngine) => void) {
+  const { engine } = get();
+  if (!engine) return;
+  run(engine);
+  set({ dirty: true, version: get().version + 1 });
+}
+
 export const useDraftStore = create<DraftStore>((set, get) => ({
   datasetId: DEFAULT_DATASET_ID,
   players: loadDataset(DEFAULT_DATASET_ID),
@@ -258,6 +331,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   engine: null,
   started: false,
   version: 0,
+  dirty: false,
 
   setDataset: (id) => set((s) => swapDataset(s, id)),
 
@@ -281,63 +355,24 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   overridePlayer: (playerId, patch) =>
     set((s) => ({ players: s.players.map((p) => (p.id === playerId ? { ...p, ...patch } : p)) })),
 
-  start: () =>
-    set((s) => {
-      // Fresh seed each run → repeated mocks actually differ. The seed is stored
-      // (and snapshotted), so any single draft stays perfectly reproducible.
-      const seed = (Math.random() * 2 ** 32) >>> 0;
-      return { seed, engine: buildEngine({ ...s, seed }), started: true, version: s.version + 1 };
-    }),
-
-  saveSession: (name) =>
-    set((s) => {
-      const list = listSessions().filter((x) => x.name !== name);
-      list.push({ id: String(Date.now()), name, savedAt: Date.now(), status: sessionStatus(s), snap: snapshot(s) });
-      writeSessions(list);
-      return { version: s.version + 1 };
-    }),
-
-  loadSession: (id) =>
-    set((s) => {
-      const rec = listSessions().find((x) => x.id === id);
-      return rec ? restoreState(rec.snap, s.version + 1) : {};
-    }),
-
-  deleteSession: (id) =>
-    set((s) => {
-      writeSessions(listSessions().filter((x) => x.id !== id));
-      return { version: s.version + 1 };
-    }),
-
-  // Import = add to the log AND make it the active draft (dropping a file is
-  // the same intent as opening it), so keepers/picks show immediately.
-  importSession: (rec) =>
-    set((s) => {
-      writeSessions([...listSessions(), { ...rec, id: String(Date.now()) }]);
-      return restoreState(rec.snap, s.version + 1);
-    }),
-
-  reset: () => set({ engine: null, started: false, version: get().version + 1 }),
-
-  step: () => {
-    const { engine } = get();
-    if (!engine || engine.isComplete) return;
-    engine.step();
-    set({ version: get().version + 1 });
-  },
-
-  autoToHuman: () => {
-    const { engine } = get();
-    if (!engine) return;
-    engine.runToCompletion();
-    set({ version: get().version + 1 });
-  },
-
-  makePick: (playerId) => {
-    const { engine } = get();
-    if (!engine) return;
-    engine.makePick(playerId);
-    engine.runToCompletion(); // let bots roll until the human is on the clock again
-    set({ version: get().version + 1 });
-  },
+  start: () => startDraft(set),
+  saveSession: (name) => persistSession(name, get, set),
+  loadSession: (id) => openSession(id, get, set),
+  deleteSession: (id) => removeSession(id, set),
+  importSession: (rec) => appendSession(rec, get, set),
+  reset: () => resetBoard(get, set),
+  step: () => advance(get, set, (e) => { if (!e.isComplete) e.step(); }),
+  autoToHuman: () => advance(get, set, (e) => e.runToCompletion()),
+  // Let bots roll until the human is on the clock again after a manual pick.
+  makePick: (playerId) => advance(get, set, (e) => { e.makePick(playerId); e.runToCompletion(); }),
 }));
+
+// Warn before a tab close or reload would silently drop an unsaved draft — the
+// same discard guard, at the browser's edge. No component owns this concern.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', (e) => {
+    if (!useDraftStore.getState().dirty) return;
+    e.preventDefault();
+    e.returnValue = ''; // Chrome/Firefox require a set returnValue to prompt.
+  });
+}

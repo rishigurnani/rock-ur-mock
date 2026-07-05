@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { snapshot, restoreState, remapCells, type Snapshot, type DraftStore } from '../draftStore';
+import { describe, it, expect, vi } from 'vitest';
+import { snapshot, restoreState, remapCells, confirmDiscard, type Snapshot, type DraftStore } from '../draftStore';
 import type { Player } from '../../types';
 import { loadDataset } from '../../data/datasets';
 import { cellKey, resolvePickOrder } from '../../engine/matrix';
@@ -115,5 +115,18 @@ describe('Session save/restore — keeper persistence (the reported bug)', () =>
     expect(restored.slice(0, original.length)).toEqual(original);
     // Keeper cells still carry their keepers after restore.
     expect(patch.cells!.get(cellKey(3, 1))?.keeperPlayerId).toBe(KEEP_B);
+  });
+});
+
+describe('confirmDiscard — the unsaved-work gate', () => {
+  it('proceeds silently when nothing is unsaved (never prompts)', () => {
+    const ask = vi.fn(() => true);
+    expect(confirmDiscard(false, 'Reset the board', ask)).toBe(true);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('asks, and honors the answer, when a draft is unsaved', () => {
+    expect(confirmDiscard(true, 'Reset the board', () => false)).toBe(false); // user cancels
+    expect(confirmDiscard(true, 'Reset the board', () => true)).toBe(true); // user confirms
   });
 });
