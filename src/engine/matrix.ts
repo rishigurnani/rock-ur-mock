@@ -220,29 +220,37 @@ function keeperCellsByTeam(cells: Map<CellKey, MatrixCell>): Map<number, CellKey
   return byTeam;
 }
 
+/** No cap: each keeper cell rolls independently, in insertion order, so a seeded
+ *  draft consumes randomness identically to its bot picks. Fixed keepers never
+ *  roll (that would consume randomness and shift the seed). */
+function rollIndependent(cells: Map<CellKey, MatrixCell>, rng: () => number): Map<CellKey, MatrixCell> {
+  const out = new Map(cells);
+  for (const [key, cell] of cells)
+    if (hasKeeper(cell) && !isFixed(cell)) out.set(key, rollCell(cell, rng));
+  return out;
+}
+
+/** Capped: the roll is enforced per team (see {@link rollTeam}); `kmax` 0 keeps
+ *  nobody. Non-keeper cells pass through unchanged. */
+function rollCapped(cells: Map<CellKey, MatrixCell>, rng: () => number, kmax: number): Map<CellKey, MatrixCell> {
+  const out = new Map(cells);
+  for (const keys of keeperCellsByTeam(cells).values()) {
+    const rolled = rollTeam(keys.map((k) => cells.get(k)!), kmax, rng);
+    keys.forEach((k, i) => out.set(k, rolled[i]));
+  }
+  return out;
+}
+
 /**
  * Resolve which candidate (if any) each keeper cell keeps THIS run, reducing every
- * cell to its single winner. Pure: no mutation.
- *
- * With no cap (`keeperCount` absent) each cell rolls independently, in insertion
- * order (so a seeded draft consumes randomness identically to its bot picks). With
- * a cap the roll is enforced per team (see {@link rollTeam}); `keeperCount` 0 keeps
- * nobody. Non-keeper cells always pass through unchanged.
+ * cell to its single winner. Pure: no mutation. Dispatches by cap — no cap rolls
+ * each cell independently ({@link rollIndependent}), a cap enforces it per team
+ * ({@link rollCapped}).
  */
 export function rollKeepers(
   cells: Map<CellKey, MatrixCell>,
   rng: () => number,
   keeperCount?: number,
 ): Map<CellKey, MatrixCell> {
-  const out = new Map(cells);
-  if (keeperCount == null) {
-    for (const [key, cell] of cells)
-      if (hasKeeper(cell) && !isFixed(cell)) out.set(key, rollCell(cell, rng));
-    return out;
-  }
-  for (const keys of keeperCellsByTeam(cells).values()) {
-    const rolled = rollTeam(keys.map((k) => cells.get(k)!), keeperCount, rng);
-    keys.forEach((k, i) => out.set(k, rolled[i]));
-  }
-  return out;
+  return keeperCount == null ? rollIndependent(cells, rng) : rollCapped(cells, rng, keeperCount);
 }
