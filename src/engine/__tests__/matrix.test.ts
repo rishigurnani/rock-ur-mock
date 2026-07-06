@@ -1,27 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePickOrder, rollKeepers, cellKey, keptPlayerId } from '../matrix';
+import { resolvePickOrder, rollKeepers, cellKey, keptPlayerId, type ResolveOptions } from '../matrix';
 import type { MatrixCell } from '../../types';
 import { CellKey } from '../matrix';
+import { mulberry32 as seededRng } from '../../lib/util';
+
+// A 3-team, 2-round snake board; override any field (preset, rounds, cells, …).
+const order = (over: Partial<ResolveOptions> = {}) =>
+  resolvePickOrder({ teamCount: 3, roundCount: 2, preset: 'snake', defaultTimerSeconds: 60, ...over });
 
 describe('Pick Matrix resolver', () => {
   it('produces a linear order', () => {
-    const picks = resolvePickOrder({
-      teamCount: 3,
-      roundCount: 2,
-      preset: 'linear',
-      defaultTimerSeconds: 60,
-    });
+    const picks = order({ preset: 'linear' });
     expect(picks.map((p) => p.teamSlot)).toEqual([1, 2, 3, 1, 2, 3]);
     expect(picks.map((p) => p.overall)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('reverses even rounds for snake', () => {
-    const picks = resolvePickOrder({
-      teamCount: 3,
-      roundCount: 3,
-      preset: 'snake',
-      defaultTimerSeconds: 60,
-    });
+    const picks = order({ roundCount: 3 });
     // R1: 1,2,3  R2: 3,2,1  R3: 1,2,3
     expect(picks.map((p) => p.teamSlot)).toEqual([1, 2, 3, 3, 2, 1, 1, 2, 3]);
   });
@@ -30,13 +25,7 @@ describe('Pick Matrix resolver', () => {
     const cells = new Map<CellKey, MatrixCell>([
       [cellKey(2, 3), { round: 2, teamSlot: 3, assignedTeamSlot: 1 }],
     ]);
-    const picks = resolvePickOrder({
-      teamCount: 3,
-      roundCount: 2,
-      preset: 'snake',
-      defaultTimerSeconds: 60,
-      cells,
-    });
+    const picks = order({ cells });
     // Snake R2 order is slots 3,2,1; the slot-3 cell is owned by team 1.
     const r2 = picks.filter((p) => p.round === 2);
     expect(r2.find((p) => p.teamSlot === 3)!.owningTeamSlot).toBe(1);
@@ -46,13 +35,7 @@ describe('Pick Matrix resolver', () => {
     const cells = new Map<CellKey, MatrixCell>([
       [cellKey(1, 1), { round: 1, teamSlot: 1, timerSeconds: 120, keepers: [{ playerId: 'p5', prob: 1 }] }],
     ]);
-    const picks = resolvePickOrder({
-      teamCount: 2,
-      roundCount: 1,
-      preset: 'snake',
-      defaultTimerSeconds: 60,
-      cells,
-    });
+    const picks = order({ teamCount: 2, roundCount: 1, cells });
     expect(picks[0].timerSeconds).toBe(120);
     expect(keptPlayerId(picks[0])).toBe('p5'); // lone candidate resolves to occupant
     expect(picks[1].timerSeconds).toBe(60);
@@ -106,11 +89,6 @@ describe('rollKeepers (probabilistic keepers)', () => {
 });
 
 describe('rollKeepers — league cap (keeperCount)', () => {
-  // A deterministic-but-varied stream, so rejection sampling is reproducible.
-  const seededRng = (seed: number) => {
-    let s = seed >>> 0;
-    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
-  };
   // `n` single-candidate keeper cells for team 1, each at probability `p`.
   const team = (probs: number[]) =>
     new Map<CellKey, MatrixCell>(

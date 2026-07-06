@@ -5,22 +5,11 @@ import { scoreCandidates, PRESETS } from '../bot';
 import { applyModifiers } from '../modifiers';
 import { loadDataset } from '../../data/datasets';
 import { DEFAULT_LEAGUE, makeModifier } from '../../data/presets';
+import { mulberry32 as seeded } from '../../lib/util';
 import type { Team } from '../../types';
 
 // Tests run against the canonical CSV-backed pool via the dataset registry.
 const POOL = loadDataset('fp-2026');
-
-/** Deterministic RNG (mulberry32) so sims are reproducible. */
-function seeded(seed: number) {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function botTeams(count: number, brainKey: keyof typeof PRESETS = 'balanced'): Team[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -38,6 +27,14 @@ function engineOf({ seed = 1, ...over }: Partial<DraftSetup> & { seed?: number }
   return new DraftEngine({
     players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, rng: seeded(seed), ...over,
   });
+}
+
+// Force pick ids into a fresh engine (reserved keepers fall back to step()) and
+// return the resulting pick order — the shared session-restore / replay path.
+function replay(mk: () => DraftEngine, ids: string[]): string[] {
+  const e = mk();
+  for (const id of ids) { try { e.makePick(id); } catch { e.step(); } }
+  return e.completed.map((c) => c.playerId);
 }
 
 describe('Bot brain', () => {
@@ -157,12 +154,7 @@ describe('Full draft simulation', () => {
     a.runToCompletion();
     const ids = a.completed.map((c) => c.playerId);
 
-    // Replay: force each pick; keepers (reserved) fall back to step().
-    const b = mk();
-    for (const id of ids) {
-      try { b.makePick(id); } catch { b.step(); }
-    }
-    expect(b.completed.map((c) => c.playerId)).toEqual(ids);
+    expect(replay(mk, ids)).toEqual(ids);
   });
 
   it('replay preserves the prefix even with a reserved keeper mid-board', () => {
@@ -173,11 +165,7 @@ describe('Full draft simulation', () => {
     a.runToCompletion();
     const ids = a.completed.map((c) => c.playerId);
 
-    const b = mk();
-    for (const id of ids) {
-      try { b.makePick(id); } catch { b.step(); }
-    }
-    expect(b.completed.map((c) => c.playerId)).toEqual(ids);
+    expect(replay(mk, ids)).toEqual(ids);
   });
 
   it('the sharp preset is 100% VBD, 10% chaos, 50% roster need', () => {

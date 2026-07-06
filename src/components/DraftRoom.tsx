@@ -210,6 +210,19 @@ function PlayerInspector({
   // Keep probability as a percent (100 = certain).
   const [keepPct, setKeepPct] = useState(Math.round((keeper?.prob ?? 1) * 100));
 
+  // One numeric player-override row (ADP, projection, …): edit-on-blur, one place.
+  const numRow = (label: string, value: number, apply: (n: number) => void) => (
+    <div className="row">
+      <label>{label}</label>
+      <input
+        type="number"
+        defaultValue={value}
+        style={{ width: 80 }}
+        onBlur={(e) => apply(Number(e.target.value))}
+      />
+    </div>
+  );
+
   return (
     <div className="panel inspector">
       <div className="row">
@@ -231,24 +244,8 @@ function PlayerInspector({
         </button>
       )}
 
-      <div className="row">
-        <label>ADP</label>
-        <input
-          type="number"
-          defaultValue={player.adp}
-          style={{ width: 80 }}
-          onBlur={(e) => store.overridePlayer(player.id, { adp: Number(e.target.value) })}
-        />
-      </div>
-      <div className="row">
-        <label>Proj pts</label>
-        <input
-          type="number"
-          defaultValue={player.projPoints}
-          style={{ width: 80 }}
-          onBlur={(e) => store.overridePlayer(player.id, { projPoints: Number(e.target.value) })}
-        />
-      </div>
+      {numRow('ADP', player.adp, (n) => store.overridePlayer(player.id, { adp: n }))}
+      {numRow('Proj pts', player.projPoints, (n) => store.overridePlayer(player.id, { projPoints: n }))}
       <button
         className="mini"
         style={{ width: '100%', marginTop: 6 }}

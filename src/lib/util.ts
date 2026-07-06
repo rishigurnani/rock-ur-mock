@@ -36,3 +36,17 @@ export function indexById<T extends { id: string }>(items: T[]): Map<string, T> 
 export function range1(n: number): number[] {
   return Array.from({ length: n }, (_, i) => i + 1);
 }
+
+/** Seeded PRNG (mulberry32): a deterministic 0-1 stream from an integer seed, so
+ *  a draft replays identically. One generator, shared by the live store and the
+ *  engine tests instead of re-implemented in each. */
+export function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}

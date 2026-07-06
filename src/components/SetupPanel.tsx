@@ -3,7 +3,7 @@ import { MODIFIER_LIBRARY } from '../data/presets';
 import { listDatasets } from '../data/datasets';
 import { BrainSliders } from './BrainSliders';
 import { range1 } from '../lib/util';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import type { RosterSlot } from '../types';
 
 // Roster spots <-> one compact text field, e.g. "QB1 RB2 WR2 TE1 FLEX1 BENCH6".
@@ -45,6 +45,12 @@ export function SetupPanel() {
     URL.revokeObjectURL(url);
   };
   const onImport = (file: File) => readText(file, (t) => store.importSession(JSON.parse(t)));
+  // Hidden-input change → the first file, then reset so re-picking the same file fires again.
+  const pickFile = (onFile: (f: File) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) onFile(f);
+    e.target.value = '';
+  };
 
   const isOn = (key: keyof typeof MODIFIER_LIBRARY) =>
     modifiers.some(
@@ -87,11 +93,7 @@ export function SetupPanel() {
           type="file"
           accept=".csv"
           style={{ display: 'none' }}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onUpload(file);
-            e.target.value = '';
-          }}
+          onChange={pickFile(onUpload)}
         />
       </div>
 
@@ -241,7 +243,7 @@ export function SetupPanel() {
           type="file"
           accept=".json"
           style={{ display: 'none' }}
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }}
+          onChange={pickFile(onImport)}
         />
       </div>
     </div>
