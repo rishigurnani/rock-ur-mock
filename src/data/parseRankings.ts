@@ -94,6 +94,15 @@ interface Columns {
   bye: number;
 }
 
+/** Parse-wide state threaded through every row: resolved columns, id prefix,
+ *  the running per-position counter, and caller options. */
+interface ParseContext {
+  cols: Columns;
+  prefix: string;
+  posCounters: Map<Position, number>;
+  opts: ParseOptions;
+}
+
 /** An explicit TAGS cell wins; else fall back to rookieNames, default Veteran. */
 function resolveTags(f: string[], iTags: number, name: string, opts: ParseOptions): string[] {
   const explicit =
@@ -103,14 +112,8 @@ function resolveTags(f: string[], iTags: number, name: string, opts: ParseOption
 }
 
 /** Map one CSV row to a Player, or null to skip (blank name / bad position). */
-function rowToPlayer(
-  f: string[],
-  cols: Columns,
-  prefix: string,
-  r: number,
-  posCounters: Map<Position, number>,
-  opts: ParseOptions,
-): Player | null {
+function rowToPlayer(f: string[], r: number, ctx: ParseContext): Player | null {
+  const { cols, prefix, posCounters, opts } = ctx;
   const name = f[cols.name];
   if (!name) return null;
 
@@ -158,12 +161,11 @@ export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[]
     );
   }
 
-  const prefix = opts.idPrefix ?? 'pl';
-  const posCounters = new Map<Position, number>();
+  const ctx: ParseContext = { cols, prefix: opts.idPrefix ?? 'pl', posCounters: new Map(), opts };
   const players: Player[] = [];
 
   for (let r = 1; r < lines.length; r++) {
-    const player = rowToPlayer(splitCsvLine(lines[r]), cols, prefix, r, posCounters, opts);
+    const player = rowToPlayer(splitCsvLine(lines[r]), r, ctx);
     if (player) players.push(player);
   }
 
