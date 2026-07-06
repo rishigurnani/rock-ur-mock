@@ -29,11 +29,13 @@ export function SetupPanel() {
   const fileRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
-  const onUpload = (file: File) => {
+  const readText = (file: File, use: (text: string) => void) => {
     const reader = new FileReader();
-    reader.onload = () => store.uploadDataset(file.name.replace(/\.csv$/i, ''), String(reader.result));
+    reader.onload = () => use(String(reader.result));
     reader.readAsText(file);
   };
+  const onUpload = (file: File) =>
+    readText(file, (t) => store.uploadDataset(file.name.replace(/\.csv$/i, ''), t));
 
   // Portable drafts: snapshots are self-contained, so a session is one JSON file.
   const exportSession = (sn: SessionRec) => {
@@ -42,11 +44,7 @@ export function SetupPanel() {
     a.click();
     URL.revokeObjectURL(url);
   };
-  const onImport = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => store.importSession(JSON.parse(String(reader.result)));
-    reader.readAsText(file);
-  };
+  const onImport = (file: File) => readText(file, (t) => store.importSession(JSON.parse(t)));
 
   const isOn = (key: keyof typeof MODIFIER_LIBRARY) =>
     modifiers.some(

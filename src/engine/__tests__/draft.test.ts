@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DraftEngine } from '../draft';
+import { DraftEngine, type DraftSetup } from '../draft';
 import { cellKey } from '../matrix';
 import { scoreCandidates, PRESETS } from '../bot';
 import { applyModifiers } from '../modifiers';
@@ -30,6 +30,14 @@ function botTeams(count: number, brainKey: keyof typeof PRESETS = 'balanced'): T
     isBot: true,
     brain: PRESETS[brainKey],
   }));
+}
+
+// Engine with the standard 10-bot / default-league setup; override any field,
+// and pass `seed` as shorthand for the seeded RNG.
+function engineOf({ seed = 1, ...over }: Partial<DraftSetup> & { seed?: number } = {}) {
+  return new DraftEngine({
+    players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, rng: seeded(seed), ...over,
+  });
 }
 
 describe('Bot brain', () => {
@@ -68,13 +76,7 @@ describe('Bot brain', () => {
 
 describe('Full draft simulation', () => {
   it('runs a complete 10-team snake draft with no duplicate picks', () => {
-    const engine = new DraftEngine({
-      players: POOL,
-      modifiers: [],
-      teams: botTeams(10),
-      config: DEFAULT_LEAGUE,
-      rng: seeded(42),
-    });
+    const engine = engineOf({ seed: 42 });
     engine.runToCompletion();
 
     expect(engine.isComplete).toBe(true);
@@ -86,13 +88,7 @@ describe('Full draft simulation', () => {
 
   it('is reproducible under the same seed', () => {
     const run = () => {
-      const e = new DraftEngine({
-        players: POOL,
-        modifiers: [],
-        teams: botTeams(10),
-        config: DEFAULT_LEAGUE,
-        rng: seeded(7),
-      });
+      const e = engineOf({ seed: 7 });
       e.runToCompletion();
       return e.completed.map((c) => c.playerId).join(',');
     };
@@ -100,13 +96,7 @@ describe('Full draft simulation', () => {
   });
 
   it('respects Superflex — allows a team to roster 2 QBs but never 3', () => {
-    const engine = new DraftEngine({
-      players: POOL,
-      modifiers: [makeModifier('superflex')],
-      teams: botTeams(10, 'sharkADP'),
-      config: DEFAULT_LEAGUE,
-      rng: seeded(3),
-    });
+    const engine = engineOf({ modifiers: [makeModifier('superflex')], teams: botTeams(10, 'sharkADP'), seed: 3 });
     engine.runToCompletion();
 
     const qbCountBySlot = new Map<number, number>();
@@ -124,14 +114,7 @@ describe('Full draft simulation', () => {
     const cells = new Map([
       [cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: keeperId, prob: 1 }] }],
     ]);
-    const engine = new DraftEngine({
-      players: POOL,
-      modifiers: [],
-      teams: botTeams(10),
-      config: { ...DEFAULT_LEAGUE, roundCount: 3 },
-      cells,
-      rng: seeded(1),
-    });
+    const engine = engineOf({ config: { ...DEFAULT_LEAGUE, roundCount: 3 }, cells, seed: 1 });
     engine.runToCompletion();
     const firstPick = engine.completed.find((c) => c.overall === 1)!;
     expect(firstPick.playerId).toBe(keeperId);
@@ -144,14 +127,7 @@ describe('Full draft simulation', () => {
     const cells = new Map([
       [cellKey(3, 5), { round: 3, teamSlot: 5, keepers: [{ playerId: keeperId, prob: 1 }] }],
     ]);
-    const engine = new DraftEngine({
-      players: POOL,
-      modifiers: [],
-      teams: botTeams(10),
-      config: DEFAULT_LEAGUE,
-      cells,
-      rng: seeded(9),
-    });
+    const engine = engineOf({ cells, seed: 9 });
     engine.runToCompletion();
 
     const kept = engine.completed.filter((c) => c.playerId === keeperId);
@@ -167,9 +143,7 @@ describe('Full draft simulation', () => {
     const cells = new Map([
       [cellKey(3, 5), { round: 3, teamSlot: 5, keepers: [{ playerId: keeperId, prob: 0 }] }],
     ]);
-    const engine = new DraftEngine({
-      players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, cells, rng: seeded(9),
-    });
+    const engine = engineOf({ cells, seed: 9 });
     engine.runToCompletion();
 
     const kept = engine.completed.find((c) => c.playerId === keeperId)!;
@@ -178,7 +152,7 @@ describe('Full draft simulation', () => {
   });
 
   it('reconstructs a board by replaying pick ids (session restore / live config)', () => {
-    const mk = () => new DraftEngine({ players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, rng: seeded(11) });
+    const mk = () => engineOf({ seed: 11 });
     const a = mk();
     a.runToCompletion();
     const ids = a.completed.map((c) => c.playerId);
@@ -194,7 +168,7 @@ describe('Full draft simulation', () => {
   it('replay preserves the prefix even with a reserved keeper mid-board', () => {
     const keeperId = POOL[0].id;
     const cells = new Map([[cellKey(3, 5), { round: 3, teamSlot: 5, keepers: [{ playerId: keeperId, prob: 1 }] }]]);
-    const mk = () => new DraftEngine({ players: POOL, modifiers: [], teams: botTeams(10), config: { ...DEFAULT_LEAGUE, roundCount: 4 }, cells, rng: seeded(11) });
+    const mk = () => engineOf({ config: { ...DEFAULT_LEAGUE, roundCount: 4 }, cells, seed: 11 });
     const a = mk();
     a.runToCompletion();
     const ids = a.completed.map((c) => c.playerId);
@@ -212,10 +186,7 @@ describe('Full draft simulation', () => {
 
   it('different seeds produce different drafts (bots are stochastic)', () => {
     const run = (seed: number) => {
-      const e = new DraftEngine({
-        players: POOL, modifiers: [], teams: botTeams(10, 'balanced'),
-        config: DEFAULT_LEAGUE, rng: seeded(seed),
-      });
+      const e = engineOf({ seed });
       e.runToCompletion();
       return e.completed.map((c) => c.playerId).join(',');
     };
@@ -225,9 +196,7 @@ describe('Full draft simulation', () => {
   it('a future keeper counts toward its team roster + needs before its pick', () => {
     const keeperQb = POOL.find((p) => p.position === 'QB')!.id;
     const cells = new Map([[cellKey(10, 2), { round: 10, teamSlot: 2, keepers: [{ playerId: keeperQb, prob: 1 }] }]]);
-    const engine = new DraftEngine({
-      players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, cells, rng: seeded(1),
-    });
+    const engine = engineOf({ cells, seed: 1 });
 
     // Before a single pick, team 2 already "has" its keeper QB, counted toward
     // its roster (so the bot sees the QB slot as filled, no need bonus for QB).
@@ -236,14 +205,7 @@ describe('Full draft simulation', () => {
   });
 
   it('pauses for a human seat instead of auto-picking', () => {
-    const engine = new DraftEngine({
-      players: POOL,
-      modifiers: [],
-      teams: botTeams(10),
-      config: DEFAULT_LEAGUE,
-      humanSlot: 1,
-      rng: seeded(5),
-    });
+    const engine = engineOf({ humanSlot: 1, seed: 5 });
     engine.runToCompletion();
     // First pick belongs to slot 1 (human) => engine should stop immediately.
     expect(engine.isComplete).toBe(false);

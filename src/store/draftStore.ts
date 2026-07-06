@@ -297,10 +297,14 @@ function persistSession(name: string, get: StoreGet, set: StoreSet) {
   set({ dirty: false, version: s.version + 1 }); // saving clears unsaved changes
 }
 
+// Make a saved/imported record the active draft (its cells + pool ride along).
+const activate = (rec: SessionRec, set: StoreSet) =>
+  set((s) => ({ ...restoreState(rec.snap, s.version + 1), dirty: false }));
+
 function openSession(id: string, get: StoreGet, set: StoreSet) {
   if (!confirmDiscard(get().dirty, 'Open a saved draft')) return;
   const rec = listSessions().find((x) => x.id === id);
-  if (rec) set((s) => ({ ...restoreState(rec.snap, s.version + 1), dirty: false }));
+  if (rec) activate(rec, set);
 }
 
 // Import = add to the log AND make it the active draft (dropping a file is the
@@ -308,7 +312,7 @@ function openSession(id: string, get: StoreGet, set: StoreSet) {
 function appendSession(rec: SessionRec, get: StoreGet, set: StoreSet) {
   if (!confirmDiscard(get().dirty, 'Import a draft')) return;
   writeSessions([...listSessions(), { ...rec, id: String(Date.now()) }]);
-  set((s) => ({ ...restoreState(rec.snap, s.version + 1), dirty: false }));
+  activate(rec, set);
 }
 
 function removeSession(id: string, set: StoreSet) {
