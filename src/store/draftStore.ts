@@ -9,7 +9,6 @@
 import { create } from 'zustand';
 import type {
   Brain,
-  KeeperOption,
   LeagueConfig,
   MatrixCell,
   Modifier,
@@ -17,7 +16,7 @@ import type {
   Team,
 } from '../types';
 import { DraftEngine } from '../engine/draft';
-import { CellKey, cellKey } from '../engine/matrix';
+import { CellKey, cellKey, migrateCell, remapCells, withKeeper, type KeeperEdit } from '../engine/matrix';
 import { PRESETS } from '../engine/bot';
 import {
   DEFAULT_DATASET_ID,
@@ -25,61 +24,6 @@ import {
   registerUploadedDataset,
 } from '../data/datasets';
 import { DEFAULT_LEAGUE, makeModifier, MODIFIER_LIBRARY } from '../data/presets';
-
-/** Write a cell's keeper candidate list, dropping the whole cell when the list
- *  (and every other override) is empty. */
-function setKeepers(cells: Map<CellKey, MatrixCell>, key: CellKey, cell: MatrixCell, keepers: KeeperOption[]) {
-  if (keepers.length) {
-    cells.set(key, { ...cell, keepers });
-  } else {
-    const { keepers: _drop, ...rest } = cell;
-    if (rest.assignedTeamSlot == null && rest.timerSeconds == null) cells.delete(key);
-    else cells.set(key, rest);
-  }
-}
-
-/** Remove one player from any cell's candidate list, cleaning up an emptied cell. */
-function dropCandidate(cells: Map<CellKey, MatrixCell>, playerId: string) {
-  for (const [key, cell] of cells) {
-    if (cell.keepers?.some((o) => o.playerId === playerId)) {
-      setKeepers(cells, key, cell, cell.keepers.filter((o) => o.playerId !== playerId));
-    }
-  }
-}
-
-/** Upgrade a legacy single-keeper cell (older saves: keeperPlayerId/keeperProb)
- *  to the candidate-list shape, so restored drafts keep their keepers. */
-function migrateCell(c: MatrixCell): MatrixCell {
-  const legacy = c as MatrixCell & { keeperPlayerId?: string; keeperProb?: number };
-  if (legacy.keeperPlayerId && !c.keepers) {
-    const { keeperPlayerId, keeperProb, ...rest } = legacy;
-    return { ...rest, keepers: [{ playerId: keeperPlayerId, prob: keeperProb ?? 1 }] };
-  }
-  return c;
-}
-
-/**
- * Re-point keeper candidates to the same-named player in a new pool (separation
- * of concerns: swapping rankings changes players, not your keeper *choices*).
- * Candidates whose player is absent from the new pool are dropped.
- */
-export function remapCells(
-  cells: Map<CellKey, MatrixCell>,
-  oldPlayers: Player[],
-  newPlayers: Player[],
-): Map<CellKey, MatrixCell> {
-  const nameOf = new Map(oldPlayers.map((p) => [p.id, p.name]));
-  const newByName = new Map(newPlayers.map((p) => [p.name, p]));
-  const out = new Map<CellKey, MatrixCell>();
-  for (const [key, cell] of cells) {
-    if (!cell.keepers?.length) { out.set(key, cell); continue; }
-    const keepers = cell.keepers
-      .map((o) => ({ ...o, playerId: newByName.get(nameOf.get(o.playerId) ?? '')?.id }))
-      .filter((o): o is KeeperOption => o.playerId != null);
-    setKeepers(out, key, cell, keepers);
-  }
-  return out;
-}
 
 function mulberry32(seed: number) {
   let a = seed;
@@ -170,29 +114,6 @@ function toggledModifiers(mods: Modifier[], key: keyof typeof MODIFIER_LIBRARY):
   const lib = MODIFIER_LIBRARY[key];
   const existing = mods.find((m) => m.matchTag === lib.matchTag && m.action === lib.action);
   return existing ? mods.filter((m) => m !== existing) : [...mods, makeModifier(key)];
-}
-
-/** One keeper edit: make `playerId` a candidate at a cell with probability
- *  `prob` (0-1), or remove that candidate when `prob <= 0`. */
-export interface KeeperEdit {
-  round: number;
-  teamSlot: number;
-  playerId: string;
-  prob: number;
-}
-
-/** Apply a keeper edit: a player is a candidate in at most one cell, so it is
- *  first removed everywhere, then (unless prob ≤ 0) added to the target cell's
- *  candidate list — joining any others already competing for that pick. */
-function withKeeper(src: Map<CellKey, MatrixCell>, e: KeeperEdit): Map<CellKey, MatrixCell> {
-  const cells = new Map(src);
-  dropCandidate(cells, e.playerId);
-  if (e.prob <= 0) return cells;
-  const key = cellKey(e.round, e.teamSlot);
-  const existing = cells.get(key) ?? { round: e.round, teamSlot: e.teamSlot };
-  const keepers: KeeperOption[] = [...(existing.keepers ?? []), { playerId: e.playerId, prob: Math.min(1, e.prob) }];
-  cells.set(key, { ...existing, keepers });
-  return cells;
 }
 
 /** Apply a keeper edit. A team may enter MORE keepers than the league cap

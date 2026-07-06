@@ -1,5 +1,5 @@
 // ============================================================================
-// Pick Matrix resolver
+// Pick Matrix — the sparse cell map: build, edit, and resolve
 // ----------------------------------------------------------------------------
 // Turns a SPARSE set of cell overrides + a preset into a concrete, ordered
 // list of picks. This one function generalizes Snake, Linear, 3rd-Round
@@ -7,7 +7,7 @@
 // (assignedTeamSlot), keepers (candidate lists), and per-cell timers.
 // ============================================================================
 
-import type { KeeperOption, MatrixCell, MatrixPreset, ResolvedPick } from '../types';
+import type { KeeperOption, MatrixCell, MatrixPreset, Player, ResolvedPick } from '../types';
 
 export type CellKey = `${number}:${number}`;
 
@@ -21,6 +21,88 @@ export function cellKey(round: number, teamSlot: number): CellKey {
  *  this derives from it, so no parallel field can drift out of sync. */
 export function keptPlayerId(source: { keepers?: KeeperOption[] }): string | undefined {
   return source.keepers?.length === 1 ? source.keepers[0].playerId : undefined;
+}
+
+// --- Cell editing: build/mutate the sparse cell map ------------------------
+// Kept beside resolution so the whole keeper-cell lifecycle lives in one place;
+// callers orchestrate (which slot, which pool) and never hand-edit cells.
+
+/** One keeper edit: make `playerId` a candidate at a cell with probability
+ *  `prob` (0-1), or remove that candidate when `prob <= 0`. */
+export interface KeeperEdit {
+  round: number;
+  teamSlot: number;
+  playerId: string;
+  prob: number;
+}
+
+/** Write a cell's keeper candidate list, dropping the whole cell when the list
+ *  (and every other override) is empty. */
+function setKeepers(cells: Map<CellKey, MatrixCell>, key: CellKey, cell: MatrixCell, keepers: KeeperOption[]) {
+  if (keepers.length) {
+    cells.set(key, { ...cell, keepers });
+  } else {
+    const { keepers: _drop, ...rest } = cell;
+    if (rest.assignedTeamSlot == null && rest.timerSeconds == null) cells.delete(key);
+    else cells.set(key, rest);
+  }
+}
+
+/** Remove one player from any cell's candidate list, cleaning up an emptied cell. */
+function dropCandidate(cells: Map<CellKey, MatrixCell>, playerId: string) {
+  for (const [key, cell] of cells) {
+    if (cell.keepers?.some((o) => o.playerId === playerId)) {
+      setKeepers(cells, key, cell, cell.keepers.filter((o) => o.playerId !== playerId));
+    }
+  }
+}
+
+/** Apply a keeper edit: a player is a candidate in at most one cell, so it is
+ *  first removed everywhere, then (unless prob ≤ 0) added to the target cell's
+ *  candidate list — joining any others already competing for that pick. */
+export function withKeeper(src: Map<CellKey, MatrixCell>, e: KeeperEdit): Map<CellKey, MatrixCell> {
+  const cells = new Map(src);
+  dropCandidate(cells, e.playerId);
+  if (e.prob <= 0) return cells;
+  const key = cellKey(e.round, e.teamSlot);
+  const existing = cells.get(key) ?? { round: e.round, teamSlot: e.teamSlot };
+  const keepers: KeeperOption[] = [...(existing.keepers ?? []), { playerId: e.playerId, prob: Math.min(1, e.prob) }];
+  cells.set(key, { ...existing, keepers });
+  return cells;
+}
+
+/** Upgrade a legacy single-keeper cell (older saves: keeperPlayerId/keeperProb)
+ *  to the candidate-list shape, so restored drafts keep their keepers. */
+export function migrateCell(c: MatrixCell): MatrixCell {
+  const legacy = c as MatrixCell & { keeperPlayerId?: string; keeperProb?: number };
+  if (legacy.keeperPlayerId && !c.keepers) {
+    const { keeperPlayerId, keeperProb, ...rest } = legacy;
+    return { ...rest, keepers: [{ playerId: keeperPlayerId, prob: keeperProb ?? 1 }] };
+  }
+  return c;
+}
+
+/**
+ * Re-point keeper candidates to the same-named player in a new pool (separation
+ * of concerns: swapping rankings changes players, not your keeper *choices*).
+ * Candidates whose player is absent from the new pool are dropped.
+ */
+export function remapCells(
+  cells: Map<CellKey, MatrixCell>,
+  oldPlayers: Player[],
+  newPlayers: Player[],
+): Map<CellKey, MatrixCell> {
+  const nameOf = new Map(oldPlayers.map((p) => [p.id, p.name]));
+  const newByName = new Map(newPlayers.map((p) => [p.name, p]));
+  const out = new Map<CellKey, MatrixCell>();
+  for (const [key, cell] of cells) {
+    if (!cell.keepers?.length) { out.set(key, cell); continue; }
+    const keepers = cell.keepers
+      .map((o) => ({ ...o, playerId: newByName.get(nameOf.get(o.playerId) ?? '')?.id }))
+      .filter((o): o is KeeperOption => o.playerId != null);
+    setKeepers(out, key, cell, keepers);
+  }
+  return out;
 }
 
 export interface ResolveOptions {

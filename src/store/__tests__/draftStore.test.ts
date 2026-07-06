@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { snapshot, restoreState, remapCells, confirmDiscard, hydratePlayers, assignKeeper, swapSeats, type Snapshot, type DraftStore } from '../draftStore';
+import { snapshot, restoreState, confirmDiscard, hydratePlayers, assignKeeper, swapSeats, type Snapshot, type DraftStore } from '../draftStore';
 import type { Player } from '../../types';
 import { loadDataset } from '../../data/datasets';
-import { cellKey, resolvePickOrder, keptPlayerId } from '../../engine/matrix';
+import { cellKey, resolvePickOrder, keptPlayerId, remapCells } from '../../engine/matrix';
 import { DraftEngine } from '../../engine/draft';
 import { DEFAULT_LEAGUE } from '../../data/presets';
 import { PRESETS } from '../../engine/bot';
