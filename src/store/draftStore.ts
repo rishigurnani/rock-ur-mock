@@ -174,14 +174,10 @@ function withKeeper(src: Map<CellKey, MatrixCell>, e: KeeperEdit): Map<CellKey, 
   return cells;
 }
 
-/** withKeeper + the league keeper cap: adding a candidate to a team's first
- *  keeper on a NEW cell is blocked once the team already holds `keeperCount`
- *  (> 0) keeper picks. Adding an alternative to an existing keeper cell is free. */
+/** Apply a keeper edit. A team may enter MORE keepers than the league cap
+ *  (`keeperCount`): the cap governs how many are actually kept, enforced at roll
+ *  time (see rollKeepers), not how many candidates a manager may list. */
 export function assignKeeper(s: DraftStore, e: KeeperEdit): Partial<DraftStore> {
-  const cap = s.config.keeperCount ?? 0;
-  const isNewCell = e.prob > 0 && !s.cells.get(cellKey(e.round, e.teamSlot))?.keepers?.length;
-  const teamCells = [...s.cells.values()].filter((c) => c.teamSlot === e.teamSlot && c.keepers?.length).length;
-  if (isNewCell && cap > 0 && teamCells >= cap) return {}; // at the league keeper limit
   return { cells: withKeeper(s.cells, e) };
 }
 

@@ -166,22 +166,15 @@ describe('restore backfills byes into older (pre-bye) saves', () => {
   });
 });
 
-describe('assignKeeper — league keeper cap (keeperCount)', () => {
+describe('assignKeeper — candidate entry', () => {
   // preDraftWithKeepers gives Team 1 two keepers (KEEP_A @R1, KEEP_B @R3).
   const withCap = (keeperCount: number): DraftStore =>
     ({ ...preDraftWithKeepers(), config: { ...DEFAULT_LEAGUE, keeperCount } } as DraftStore);
 
-  it('blocks a NEW keeper once a team is at the cap', () => {
-    expect(assignKeeper(withCap(2), { round: 5, teamSlot: 1, playerId: 'fp26-9', prob: 1 })).toEqual({});
-  });
-
-  it('allows a team under the cap, and re-assigning an existing keeper cell', () => {
-    expect(assignKeeper(withCap(2), { round: 1, teamSlot: 2, playerId: 'fp26-9', prob: 1 }).cells).toBeDefined(); // team 2: new, under cap
-    expect(assignKeeper(withCap(2), { round: 1, teamSlot: 1, playerId: 'fp26-9', prob: 1 }).cells).toBeDefined(); // team 1 R1: not new
-  });
-
-  it('cap 0 means unlimited', () => {
-    expect(assignKeeper(withCap(0), { round: 5, teamSlot: 1, playerId: 'fp26-9', prob: 1 }).cells).toBeDefined();
+  it('lets a team enter MORE keepers than the cap (the cap is enforced at roll time)', () => {
+    // Team 1 already holds 2; adding a 3rd with a cap of 2 is still allowed.
+    const cells = assignKeeper(withCap(2), { round: 5, teamSlot: 1, playerId: 'fp26-9', prob: 1 }).cells!;
+    expect(cells.get(cellKey(5, 1))?.keepers).toEqual([{ playerId: 'fp26-9', prob: 1 }]);
   });
 
   it('records each candidate with its probability', () => {

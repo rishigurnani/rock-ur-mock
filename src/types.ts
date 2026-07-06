@@ -95,7 +95,7 @@ export interface LeagueConfig {
   preset: MatrixPreset;
   /** Starting-lineup requirements. BENCH is capacity beyond starters. */
   rosterSlots: Partial<Record<RosterSlot, number>>;
-  /** Max keepers allowed per team (0 / absent = no limit). */
+  /** Max keepers kept per team each run. Absent = no limit; 0 = exactly none. */
   keeperCount?: number;
 }
 

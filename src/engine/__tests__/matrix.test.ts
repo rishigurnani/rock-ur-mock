@@ -104,3 +104,54 @@ describe('rollKeepers (probabilistic keepers)', () => {
     expect(draws).toBe(0);
   });
 });
+
+describe('rollKeepers — league cap (keeperCount)', () => {
+  // A deterministic-but-varied stream, so rejection sampling is reproducible.
+  const seededRng = (seed: number) => {
+    let s = seed >>> 0;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
+  };
+  // `n` single-candidate keeper cells for team 1, each at probability `p`.
+  const team = (probs: number[]) =>
+    new Map<CellKey, MatrixCell>(
+      probs.map((p, i) => [cellKey(i + 1, 1), { round: i + 1, teamSlot: 1, keepers: [{ playerId: `p${i}`, prob: p }] }]),
+    );
+  const kept = (m: Map<CellKey, MatrixCell>) => [...m.values()].filter((c) => c.keepers?.length).length;
+
+  it('keeperCount 0 keeps nobody, even certain keepers', () => {
+    expect(kept(rollKeepers(team([1, 1, 0.5]), () => 0.1, 0))).toBe(0);
+  });
+
+  it('with Knz >= Kmax, keeps EXACTLY Kmax on every roll', () => {
+    for (let seed = 1; seed <= 25; seed++) {
+      expect(kept(rollKeepers(team([0.5, 0.5, 0.5, 0.5, 0.5, 0.5]), seededRng(seed), 4))).toBe(4);
+    }
+  });
+
+  it('normalizes a too-greedy board down so exactly Kmax is reachable', () => {
+    // 6 certain keepers, cap 4: without scaling every roll keeps 6 and never hits 4.
+    expect(kept(rollKeepers(team([1, 1, 1, 1, 1, 1]), seededRng(7), 4))).toBe(4);
+  });
+
+  it('normalizes a too-timid board up so the cap is reachable', () => {
+    // 4 keepers at 0.1 (sum 0.4), cap 4: scaled up until all four can be kept.
+    expect(kept(rollKeepers(team([0.1, 0.1, 0.1, 0.1]), seededRng(3), 4))).toBe(4);
+  });
+
+  it('with Knz < Kmax, rolls independently (the cap is unreachable)', () => {
+    // 2 candidates under a cap of 4: no rejection, each rolls on its own prob.
+    expect(kept(rollKeepers(team([1, 0]), () => 0.9, 4))).toBe(1); // only the certain one
+  });
+
+  it('enforces the cap per team, independently', () => {
+    const cells = new Map<CellKey, MatrixCell>([
+      ...team([0.5, 0.5]),
+      [cellKey(1, 2), { round: 1, teamSlot: 2, keepers: [{ playerId: 'c', prob: 0.5 }] }],
+      [cellKey(2, 2), { round: 2, teamSlot: 2, keepers: [{ playerId: 'd', prob: 0.5 }] }],
+    ]);
+    const out = rollKeepers(cells, seededRng(3), 1);
+    const perTeam = (slot: number) => [...out.values()].filter((c) => c.teamSlot === slot && c.keepers?.length).length;
+    expect(perTeam(1)).toBe(1);
+    expect(perTeam(2)).toBe(1);
+  });
+});

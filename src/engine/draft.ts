@@ -67,7 +67,7 @@ export class DraftEngine {
 
     // Roll probabilistic keepers ONCE per build (seeded), then treat the
     // survivors as ordinary locked keepers everywhere downstream.
-    const cells = setup.cells ? rollKeepers(setup.cells, this.rng) : undefined;
+    const cells = setup.cells ? rollKeepers(setup.cells, this.rng, setup.config.keeperCount) : undefined;
     this.order = resolvePickOrder({
       teamCount: setup.config.teamCount,
       roundCount: setup.config.roundCount,

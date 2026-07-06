@@ -5,7 +5,7 @@ export const DEFAULT_LEAGUE: LeagueConfig = {
   roundCount: 15,
   preset: 'snake',
   rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 },
-  keeperCount: 0,
+  // keeperCount omitted → no limit by default; set it to cap keepers per team.
 };
 
 // Library of one-click modifier rules. Each is a single "If [Tag] then [Action]".

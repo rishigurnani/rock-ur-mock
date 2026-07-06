@@ -15,15 +15,6 @@ export function cellKey(round: number, teamSlot: number): CellKey {
   return `${round}:${teamSlot}`;
 }
 
-/** The largest number of keeper picks any single team holds on the board. */
-export function maxKeepersPerTeam(cells: Map<CellKey, MatrixCell>): number {
-  const perTeam = new Map<number, number>();
-  for (const c of cells.values()) {
-    if (c.keepers?.length) perTeam.set(c.teamSlot, (perTeam.get(c.teamSlot) ?? 0) + 1);
-  }
-  return Math.max(0, ...perTeam.values());
-}
-
 export interface ResolveOptions {
   teamCount: number;
   roundCount: number;
@@ -89,25 +80,73 @@ function pickWinner(options: KeeperOption[], r: number): KeeperOption | null {
   return null;
 }
 
+const hasKeeper = (cell: MatrixCell) => (cell.keepers?.length ?? 0) > 0;
+/** A lone certain candidate (prob ≥ 1) is an ordinary locked keeper; it never
+ *  rolls, so seeded drafts with only fixed keepers stay reproducible. */
+const isFixed = (cell: MatrixCell) => cell.keepers?.length === 1 && cell.keepers[0].prob >= 1;
+const stripKeepers = ({ keepers: _drop, ...rest }: MatrixCell): MatrixCell => rest;
+const countKept = (cells: MatrixCell[]) => cells.reduce((n, c) => n + (hasKeeper(c) ? 1 : 0), 0);
+
+/** Reduce one cell to its single rolled winner (or nobody kept). */
+function rollCell(cell: MatrixCell, rng: () => number): MatrixCell {
+  const winner = pickWinner(cell.keepers!, rng());
+  const rest = stripKeepers(cell);
+  return winner ? { ...rest, keepers: [winner] } : rest;
+}
+
+/** Scale a team's candidate probabilities so the expected number kept lands in
+ *  [kmax/2, kmax]: a too-timid board is lifted, a too-greedy one trimmed. */
+function normalizeTeam(cells: MatrixCell[], kmax: number): MatrixCell[] {
+  const sum = cells.reduce((s, c) => s + c.keepers!.reduce((a, o) => a + o.prob, 0), 0);
+  const f = sum <= 0 ? 1 : sum < kmax / 2 ? kmax / 2 / sum : sum > kmax ? kmax / sum : 1;
+  return f === 1
+    ? cells
+    : cells.map((c) => ({ ...c, keepers: c.keepers!.map((o) => ({ ...o, prob: Math.min(1, o.prob * f) })) }));
+}
+
+/** Bound the rejection sampler — a safety valve; in practice a valid roll is
+ *  found in a handful of tries once the board is normalized. */
+const MAX_KEEPER_ROLLS = 1000;
+
+/** Roll one team's keeper cells under a hard cap of `kmax` kept. When the board
+ *  offers at least `kmax` keepers, exactly `kmax` are kept: normalize, then
+ *  rejection-sample rolls until the count lands on the cap. Too few candidates
+ *  (or kmax 0) skip the cap and roll as-is. */
+function rollTeam(cells: MatrixCell[], kmax: number, rng: () => number): MatrixCell[] {
+  if (kmax <= 0) return cells.map(stripKeepers); // exactly zero kept
+  if (cells.length < kmax) return cells.map((c) => rollCell(c, rng)); // can't reach the cap
+  const norm = normalizeTeam(cells, kmax);
+  let rolled = norm.map((c) => rollCell(c, rng));
+  for (let i = 0; i < MAX_KEEPER_ROLLS && countKept(rolled) !== kmax; i++) {
+    rolled = norm.map((c) => rollCell(c, rng));
+  }
+  return rolled;
+}
+
 /**
- * Resolve which candidate (if any) each keeper cell keeps THIS run, reducing the
- * cell to its single winner. A lone certain candidate (prob ≥ 1) never rolls — so
- * seeded drafts with only fixed keepers are unchanged. Pure: no mutation.
+ * Resolve which candidate (if any) each keeper cell keeps THIS run, reducing every
+ * cell to its single winner. Pure: no mutation.
+ *
+ * With no cap (`keeperCount` absent) each cell rolls independently. With a cap the
+ * roll is enforced per team — see {@link rollTeam}. `keeperCount` 0 keeps nobody.
  */
 export function rollKeepers(
   cells: Map<CellKey, MatrixCell>,
   rng: () => number,
+  keeperCount?: number,
 ): Map<CellKey, MatrixCell> {
   const out = new Map<CellKey, MatrixCell>();
+  const byTeam = new Map<number, CellKey[]>();
+
   for (const [key, cell] of cells) {
-    const options = cell.keepers;
-    if (!options?.length || (options.length === 1 && options[0].prob >= 1)) {
-      out.set(key, cell);
-      continue;
-    }
-    const winner = pickWinner(options, rng());
-    const { keepers: _drop, ...rest } = cell;
-    out.set(key, winner ? { ...rest, keepers: [winner] } : rest);
+    if (!hasKeeper(cell)) out.set(key, cell);
+    else if (keeperCount == null) out.set(key, isFixed(cell) ? cell : rollCell(cell, rng));
+    else byTeam.set(cell.teamSlot, [...(byTeam.get(cell.teamSlot) ?? []), key]);
+  }
+
+  for (const keys of byTeam.values()) {
+    const rolled = rollTeam(keys.map((k) => cells.get(k)!), keeperCount!, rng);
+    keys.forEach((k, i) => out.set(k, rolled[i]));
   }
   return out;
 }
