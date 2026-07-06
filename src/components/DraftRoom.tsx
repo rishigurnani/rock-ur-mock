@@ -1,10 +1,23 @@
 import { useMemo, useState } from 'react';
 import { useDraftStore } from '../store/draftStore';
-import { optimizeLineup, byeClashes } from '../engine/roster';
+import { optimizeLineup, byeClashes, type LineupSeat } from '../engine/roster';
 import { indexById, range1, playerMeta, matchesQuery } from '../lib/util';
 import type { Player, Position } from '../types';
 
 const POSITIONS: (Position | 'ALL')[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+
+/** One optimized-lineup seat: its slot, the seated player (or an empty marker),
+ *  bye, and projected points. Extracted so the lineup map stays a one-liner. */
+function StarterRow({ seat: { player, slot } }: { seat: LineupSeat }) {
+  return (
+    <div className="player-row">
+      <span className={`pos ${player?.position ?? ''}`}>{slot}</span>
+      <span className="name">{player ? player.name : <em className="num">— empty —</em>}</span>
+      <span className="num">{player?.bye ? `Bye ${player.bye}` : ''}</span>
+      <span className="num">{player ? `${player.projPoints} pts` : ''}</span>
+    </div>
+  );
+}
 
 export function DraftRoom() {
   const store = useDraftStore();
@@ -90,16 +103,7 @@ export function DraftRoom() {
             </select>
             <span className="num">{Math.round(lineup.startingPoints)} starter pts</span>
           </div>
-          {lineup.starters.map((seat, i) => (
-            <div className="player-row" key={i}>
-              <span className={`pos ${seat.player?.position ?? ''}`}>{seat.slot}</span>
-              <span className="name">
-                {seat.player ? seat.player.name : <em className="num">— empty —</em>}
-              </span>
-              <span className="num">{seat.player?.bye ? `Bye ${seat.player.bye}` : ''}</span>
-              <span className="num">{seat.player ? `${seat.player.projPoints} pts` : ''}</span>
-            </div>
-          ))}
+          {lineup.starters.map((seat, i) => <StarterRow key={i} seat={seat} />)}
           {byeClashes(lineup.starters.map((s) => s.player).filter(Boolean) as Player[]).map((c) => (
             <div key={c.week} className="num" style={{ color: 'var(--warn)' }}>
               ⚠ {c.count} starters share Bye {c.week}
