@@ -61,12 +61,13 @@ export function PickMatrix() {
                   const pick = byRoundSlot.get(`${round}:${slot}`);
                   if (!pick) return <td key={slot} className="cell empty">—</td>;
                   const done = completedByOverall.get(pick.overall);
-                  const isKeeper = !!pick.keeperPlayerId;
-                  // One occupant resolver: a completed pick, or a pre-filled
-                  // keeper, or nobody yet. Keepers therefore show their player
-                  // before the draft starts, live, and after a save/restore.
+                  const candidates = pick.keepers ?? [];
+                  const isKeeper = candidates.length > 0;
+                  // A completed pick or a lone resolved keeper shows one player;
+                  // an unrolled cell with rival candidates lists them all.
                   const occupantId = done?.playerId ?? pick.keeperPlayerId;
                   const player = occupantId ? playerById.get(occupantId) : undefined;
+                  const soleProb = candidates.length === 1 ? candidates[0].prob : undefined;
                   const onClock = pick.overall === currentOverall;
                   const traded = pick.owningTeamSlot !== pick.teamSlot;
 
@@ -80,16 +81,30 @@ export function PickMatrix() {
                       }
                       title={done?.trace ? traceText(done, playerById) : undefined}
                     >
-                      {player && (
+                      {player ? (
                         <div className="pname">
                           <span className={`pos ${player.position}`}>{player.position}</span>{' '}
                           {player.name}
                         </div>
-                      )}
+                      ) : candidates.length > 1 ? (
+                        <div className="pname">
+                          {candidates.map((o) => (
+                            <div key={o.playerId}>
+                              {playerById.get(o.playerId)?.name ?? '?'} · {Math.round(o.prob * 100)}%
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="meta">
                         #{pick.overall}
                         {traded ? ` · via T${pick.owningTeamSlot}` : ''}
-                        {isKeeper ? ' · KEEPER' : ''}
+                        {isKeeper
+                          ? candidates.length > 1
+                            ? ' · KEEP?'
+                            : soleProb != null && soleProb < 1
+                              ? ` · KEEP ${Math.round(soleProb * 100)}%`
+                              : ' · KEEPER'
+                          : ''}
                       </div>
                     </td>
                   );

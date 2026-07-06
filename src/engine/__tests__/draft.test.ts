@@ -122,7 +122,7 @@ describe('Full draft simulation', () => {
   it('locks keepers before the draft runs', () => {
     const keeperId = POOL[9].id;
     const cells = new Map([
-      [cellKey(1, 1), { round: 1, teamSlot: 1, keeperPlayerId: keeperId }],
+      [cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: keeperId, prob: 1 }] }],
     ]);
     const engine = new DraftEngine({
       players: POOL,
@@ -142,7 +142,7 @@ describe('Full draft simulation', () => {
     // Keep them for Team 5 at Round 3 instead; they must survive to that cell.
     const keeperId = POOL[0].id;
     const cells = new Map([
-      [cellKey(3, 5), { round: 3, teamSlot: 5, keeperPlayerId: keeperId }],
+      [cellKey(3, 5), { round: 3, teamSlot: 5, keepers: [{ playerId: keeperId, prob: 1 }] }],
     ]);
     const engine = new DraftEngine({
       players: POOL,
@@ -158,6 +158,23 @@ describe('Full draft simulation', () => {
     expect(kept).toHaveLength(1); // drafted exactly once, not erased
     expect(kept[0].round).toBe(3);
     expect(kept[0].teamSlot).toBe(5);
+  });
+
+  it('a prob-0 keeper is released, not reserved (drafted on value, not locked)', () => {
+    // Same setup, but keeperProb 0 → this run does NOT keep them: the #1 player
+    // is back in the pool and grabbed early, NOT locked to Team 5 / Round 3.
+    const keeperId = POOL[0].id;
+    const cells = new Map([
+      [cellKey(3, 5), { round: 3, teamSlot: 5, keepers: [{ playerId: keeperId, prob: 0 }] }],
+    ]);
+    const engine = new DraftEngine({
+      players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, cells, rng: seeded(9),
+    });
+    engine.runToCompletion();
+
+    const kept = engine.completed.find((c) => c.playerId === keeperId)!;
+    expect(kept).toBeTruthy();
+    expect(kept.round === 3 && kept.teamSlot === 5).toBe(false); // not force-locked
   });
 
   it('reconstructs a board by replaying pick ids (session restore / live config)', () => {
@@ -176,7 +193,7 @@ describe('Full draft simulation', () => {
 
   it('replay preserves the prefix even with a reserved keeper mid-board', () => {
     const keeperId = POOL[0].id;
-    const cells = new Map([[cellKey(3, 5), { round: 3, teamSlot: 5, keeperPlayerId: keeperId }]]);
+    const cells = new Map([[cellKey(3, 5), { round: 3, teamSlot: 5, keepers: [{ playerId: keeperId, prob: 1 }] }]]);
     const mk = () => new DraftEngine({ players: POOL, modifiers: [], teams: botTeams(10), config: { ...DEFAULT_LEAGUE, roundCount: 4 }, cells, rng: seeded(11) });
     const a = mk();
     a.runToCompletion();
@@ -207,7 +224,7 @@ describe('Full draft simulation', () => {
 
   it('a future keeper counts toward its team roster + needs before its pick', () => {
     const keeperQb = POOL.find((p) => p.position === 'QB')!.id;
-    const cells = new Map([[cellKey(10, 2), { round: 10, teamSlot: 2, keeperPlayerId: keeperQb }]]);
+    const cells = new Map([[cellKey(10, 2), { round: 10, teamSlot: 2, keepers: [{ playerId: keeperQb, prob: 1 }] }]]);
     const engine = new DraftEngine({
       players: POOL, modifiers: [], teams: botTeams(10), config: DEFAULT_LEAGUE, cells, rng: seeded(1),
     });

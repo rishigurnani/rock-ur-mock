@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { snapshot, restoreState, remapCells, confirmDiscard, hydratePlayers, type Snapshot, type DraftStore } from '../draftStore';
+import { snapshot, restoreState, remapCells, confirmDiscard, hydratePlayers, assignKeeper, type Snapshot, type DraftStore } from '../draftStore';
 import type { Player } from '../../types';
 import { loadDataset } from '../../data/datasets';
 import { cellKey, resolvePickOrder } from '../../engine/matrix';
@@ -19,8 +19,8 @@ const teams: Team[] = Array.from({ length: 10 }, (_, i) => ({
 /** Mirrors the attached bug report: two pre-draft keepers on Team 1 (R1 + R3). */
 function preDraftWithKeepers(): DraftStore {
   const cells = new Map([
-    [cellKey(1, 1), { round: 1, teamSlot: 1, keeperPlayerId: KEEP_A }],
-    [cellKey(3, 1), { round: 3, teamSlot: 1, keeperPlayerId: KEEP_B }],
+    [cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: KEEP_A, prob: 1 }] }],
+    [cellKey(3, 1), { round: 3, teamSlot: 1, keepers: [{ playerId: KEEP_B, prob: 1 }] }],
   ]);
   return {
     datasetId: 'fp-2026', players: POOL, config: DEFAULT_LEAGUE, modifiers: [],
@@ -31,6 +31,9 @@ function preDraftWithKeepers(): DraftStore {
 /** Simulate the full save→download→refresh→upload path via a JSON round-trip. */
 const throughFile = (snap: Snapshot): Snapshot => JSON.parse(JSON.stringify(snap));
 
+/** The single resolved/first keeper on a cell. */
+const keptId = (cell?: import('../../types').MatrixCell) => cell?.keepers?.[0]?.playerId;
+
 // How PickMatrix decides who occupies a cell (completed pick, else keeper).
 const occupantId = (pick: ResolvedPick, completedId?: string) => completedId ?? pick.keeperPlayerId;
 
@@ -39,8 +42,8 @@ describe('Session save/restore — keeper persistence (the reported bug)', () =>
     const snap = throughFile(snapshot(preDraftWithKeepers()));
     const patch = restoreState(snap, 1);
 
-    expect(patch.cells!.get(cellKey(1, 1))?.keeperPlayerId).toBe(KEEP_A);
-    expect(patch.cells!.get(cellKey(3, 1))?.keeperPlayerId).toBe(KEEP_B);
+    expect(keptId(patch.cells!.get(cellKey(1, 1)))).toBe(KEEP_A);
+    expect(keptId(patch.cells!.get(cellKey(3, 1)))).toBe(KEEP_B);
     expect(patch.started).toBe(false);
     expect(patch.engine).toBeNull();
   });
@@ -88,12 +91,12 @@ describe('Session save/restore — keeper persistence (the reported bug)', () =>
     const oldPool = [p('a1', 'Star QB'), p('a2', 'Traded Away')];
     const newPool = [p('z9', 'Star QB')]; // different ids, "Traded Away" gone
     const cells = new Map([
-      [cellKey(1, 1), { round: 1, teamSlot: 1, keeperPlayerId: 'a1' }],
-      [cellKey(2, 1), { round: 2, teamSlot: 1, keeperPlayerId: 'a2' }],
+      [cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: 'a1', prob: 1 }] }],
+      [cellKey(2, 1), { round: 2, teamSlot: 1, keepers: [{ playerId: 'a2', prob: 1 }] }],
     ]);
 
     const out = remapCells(cells, oldPool, newPool);
-    expect(out.get(cellKey(1, 1))?.keeperPlayerId).toBe('z9'); // remapped by name
+    expect(keptId(out.get(cellKey(1, 1)))).toBe('z9'); // remapped by name
     expect(out.get(cellKey(2, 1))).toBeUndefined(); // player absent → keeper dropped
   });
 
@@ -114,7 +117,7 @@ describe('Session save/restore — keeper persistence (the reported bug)', () =>
     const restored = (patch.engine as DraftEngine).completed.map((c) => c.playerId);
     expect(restored.slice(0, original.length)).toEqual(original);
     // Keeper cells still carry their keepers after restore.
-    expect(patch.cells!.get(cellKey(3, 1))?.keeperPlayerId).toBe(KEEP_B);
+    expect(keptId(patch.cells!.get(cellKey(3, 1)))).toBe(KEEP_B);
   });
 });
 
@@ -160,5 +163,50 @@ describe('restore backfills byes into older (pre-bye) saves', () => {
   it('opening a pre-bye snapshot comes back with byes', () => {
     const patch = restoreState(throughFile(snapshot(preBye())), 1);
     expect(patch.players!.some((p) => p.bye != null)).toBe(true);
+  });
+});
+
+describe('assignKeeper — league keeper cap (keeperCount)', () => {
+  // preDraftWithKeepers gives Team 1 two keepers (KEEP_A @R1, KEEP_B @R3).
+  const withCap = (keeperCount: number): DraftStore =>
+    ({ ...preDraftWithKeepers(), config: { ...DEFAULT_LEAGUE, keeperCount } } as DraftStore);
+
+  it('blocks a NEW keeper once a team is at the cap', () => {
+    expect(assignKeeper(withCap(2), { round: 5, teamSlot: 1, playerId: 'fp26-9', prob: 1 })).toEqual({});
+  });
+
+  it('allows a team under the cap, and re-assigning an existing keeper cell', () => {
+    expect(assignKeeper(withCap(2), { round: 1, teamSlot: 2, playerId: 'fp26-9', prob: 1 }).cells).toBeDefined(); // team 2: new, under cap
+    expect(assignKeeper(withCap(2), { round: 1, teamSlot: 1, playerId: 'fp26-9', prob: 1 }).cells).toBeDefined(); // team 1 R1: not new
+  });
+
+  it('cap 0 means unlimited', () => {
+    expect(assignKeeper(withCap(0), { round: 5, teamSlot: 1, playerId: 'fp26-9', prob: 1 }).cells).toBeDefined();
+  });
+
+  it('records each candidate with its probability', () => {
+    const cells = assignKeeper(withCap(0), { round: 7, teamSlot: 2, playerId: 'fp26-9', prob: 0.6 }).cells!;
+    expect(cells.get(cellKey(7, 2))?.keepers).toEqual([{ playerId: 'fp26-9', prob: 0.6 }]);
+  });
+
+  it('lets two players compete for the SAME pick (keep A or B), and removes one', () => {
+    const s0 = withCap(0);
+    const s1 = { ...s0, cells: assignKeeper(s0, { round: 7, teamSlot: 2, playerId: 'A', prob: 0.6 }).cells! } as DraftStore;
+    const s2 = { ...s1, cells: assignKeeper(s1, { round: 7, teamSlot: 2, playerId: 'B', prob: 0.4 }).cells! } as DraftStore;
+    expect(s2.cells.get(cellKey(7, 2))?.keepers).toEqual([
+      { playerId: 'A', prob: 0.6 },
+      { playerId: 'B', prob: 0.4 },
+    ]);
+    // prob 0 removes just that candidate, leaving the other.
+    const after = assignKeeper(s2, { round: 7, teamSlot: 2, playerId: 'A', prob: 0 }).cells!;
+    expect(after.get(cellKey(7, 2))?.keepers).toEqual([{ playerId: 'B', prob: 0.4 }]);
+  });
+
+  it('migrates a legacy single-keeper snapshot (keeperPlayerId) into the candidate list', () => {
+    const legacy = { datasetId: 'fp-2026', players: POOL, config: DEFAULT_LEAGUE, modifiers: [], teams,
+      humanSlot: 1, seed: 42, started: false, picks: [],
+      cells: [{ round: 1, teamSlot: 1, keeperPlayerId: KEEP_A }] } as unknown as Snapshot;
+    const patch = restoreState(legacy, 1);
+    expect(keptId(patch.cells!.get(cellKey(1, 1)))).toBe(KEEP_A);
   });
 });

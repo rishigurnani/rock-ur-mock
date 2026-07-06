@@ -43,6 +43,15 @@ export interface Modifier {
 
 export type MatrixPreset = 'snake' | 'linear';
 
+/** One keeper candidate competing for a single pick. `prob` (0-1) is the chance
+ *  this is the player actually kept; probabilities across a cell's candidates
+ *  sum to ≤ 1, the remainder being "nobody kept here". A lone candidate at
+ *  prob 1 is an ordinary locked keeper. */
+export interface KeeperOption {
+  playerId: string;
+  prob: number;
+}
+
 /** SPARSE override for a single board cell. Absent cell => follows preset. */
 export interface MatrixCell {
   round: number;
@@ -51,8 +60,10 @@ export interface MatrixCell {
   assignedTeamSlot?: number;
   /** Per-cell timer override, seconds. */
   timerSeconds?: number;
-  /** Pre-filled slot = keeper. Engine skips bot logic and locks the player. */
-  keeperPlayerId?: string;
+  /** Keeper candidates competing for this pick. The manager keeps at most one;
+   *  each mock rolls which (if any) — modeling not knowing what a rival will
+   *  keep, or their own "keep A or B with this pick" choice. */
+  keepers?: KeeperOption[];
 }
 
 // ---- Bots ------------------------------------------------------------------
@@ -84,6 +95,8 @@ export interface LeagueConfig {
   preset: MatrixPreset;
   /** Starting-lineup requirements. BENCH is capacity beyond starters. */
   rosterSlots: Partial<Record<RosterSlot, number>>;
+  /** Max keepers allowed per team (0 / absent = no limit). */
+  keeperCount?: number;
 }
 
 // ---- Draft runtime ---------------------------------------------------------
@@ -97,7 +110,11 @@ export interface ResolvedPick {
   /** Who actually makes the selection (accounts for traded picks). */
   owningTeamSlot: number;
   timerSeconds: number;
+  /** The single keeper resolved for this run (set once the cell is rolled, or
+   *  when there is exactly one candidate). Absent => an ordinary pick. */
   keeperPlayerId?: string;
+  /** Keeper candidates carried through for pre-draft preview / editing. */
+  keepers?: KeeperOption[];
 }
 
 /** Transparent breakdown behind a single bot valuation (God-Mode tooltip). */

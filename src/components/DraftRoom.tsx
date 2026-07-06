@@ -37,11 +37,11 @@ export function DraftRoom() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, started, rosterSlot, config.rosterSlots, playerById, store.version]);
 
-  // playerId -> the cell that keeps them (for badges + the keeper editor).
+  // playerId -> the keeper cell they're a candidate in (for badges + the editor).
   const keeperByPlayer = useMemo(() => {
-    const m = new Map<string, { round: number; teamSlot: number }>();
+    const m = new Map<string, { round: number; teamSlot: number; prob: number }>();
     for (const c of store.cells.values()) {
-      if (c.keeperPlayerId) m.set(c.keeperPlayerId, { round: c.round, teamSlot: c.teamSlot });
+      for (const o of c.keepers ?? []) m.set(o.playerId, { round: c.round, teamSlot: c.teamSlot, prob: o.prob });
     }
     return m;
   }, [store.cells]);
@@ -198,7 +198,7 @@ function PlayerInspector({
   player: Player;
   started: boolean;
   canPick: boolean;
-  keeper: { round: number; teamSlot: number } | null;
+  keeper: { round: number; teamSlot: number; prob?: number } | null;
   teamCount: number;
   roundCount: number;
   onClose: () => void;
@@ -207,6 +207,8 @@ function PlayerInspector({
   // Keeper target defaults to the player's current cell, else Team 1 / Round 1.
   const [team, setTeam] = useState(keeper?.teamSlot ?? 1);
   const [round, setRound] = useState(keeper?.round ?? 1);
+  // Keep probability as a percent (100 = certain).
+  const [keepPct, setKeepPct] = useState(Math.round((keeper?.prob ?? 1) * 100));
 
   return (
     <div className="panel inspector">
@@ -269,21 +271,30 @@ function PlayerInspector({
                 {range1(roundCount).map((r) => (
                   <option key={r} value={r}>R{r}</option>
                 ))}
-              </select>
+              </select>{' '}
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={keepPct}
+                onChange={(e) => setKeepPct(Number(e.target.value))}
+                style={{ width: 55 }}
+                title="Chance this keeper is actually kept (each mock re-rolls it)"
+              />%
             </span>
           </div>
           <button
             className="mini primary"
             style={{ width: '100%', marginTop: 6 }}
-            onClick={() => store.setKeeper(round, team, player.id)}
+            onClick={() => store.setKeeper(round, team, player.id, keepPct / 100)}
           >
-            🔒 Keep at T{team} R{round}
+            🔒 Keep at T{team} R{round} ({keepPct}%)
           </button>
           {keeper && (
             <button
               className="mini"
               style={{ width: '100%', marginTop: 6 }}
-              onClick={() => store.setKeeper(keeper.round, keeper.teamSlot, null)}
+              onClick={() => store.setKeeper(keeper.round, keeper.teamSlot, player.id, 0)}
             >
               ✕ Remove keeper
             </button>

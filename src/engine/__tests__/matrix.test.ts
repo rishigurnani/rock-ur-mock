@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePickOrder, cellKey } from '../matrix';
+import { resolvePickOrder, rollKeepers, cellKey } from '../matrix';
 import type { MatrixCell } from '../../types';
 import { CellKey } from '../matrix';
 
@@ -44,7 +44,7 @@ describe('Pick Matrix resolver', () => {
 
   it('applies per-cell timers and keepers', () => {
     const cells = new Map<CellKey, MatrixCell>([
-      [cellKey(1, 1), { round: 1, teamSlot: 1, timerSeconds: 120, keeperPlayerId: 'p5' }],
+      [cellKey(1, 1), { round: 1, teamSlot: 1, timerSeconds: 120, keepers: [{ playerId: 'p5', prob: 1 }] }],
     ]);
     const picks = resolvePickOrder({
       teamCount: 2,
@@ -54,7 +54,53 @@ describe('Pick Matrix resolver', () => {
       cells,
     });
     expect(picks[0].timerSeconds).toBe(120);
-    expect(picks[0].keeperPlayerId).toBe('p5');
+    expect(picks[0].keeperPlayerId).toBe('p5'); // lone candidate resolves to occupant
     expect(picks[1].timerSeconds).toBe(60);
+  });
+});
+
+const won = (cell?: MatrixCell) => cell?.keepers?.[0]?.playerId;
+
+describe('rollKeepers (probabilistic keepers)', () => {
+  const cells = () => new Map<CellKey, MatrixCell>([
+    [cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: 'certain', prob: 1 }] }],
+    [cellKey(2, 1), { round: 2, teamSlot: 1, keepers: [{ playerId: 'maybe', prob: 0.5 }] }],
+    [cellKey(3, 1), { round: 3, teamSlot: 1, keepers: [{ playerId: 'longshot', prob: 0 }] }],
+  ]);
+
+  it('always keeps prob-1, always releases prob-0, and re-rolls the rest', () => {
+    const kept = rollKeepers(cells(), () => 0.9); // 0.9 not < 0.5 → maybe released
+    expect(won(kept.get(cellKey(1, 1)))).toBe('certain');
+    expect(won(kept.get(cellKey(2, 1)))).toBeUndefined(); // released
+    expect(won(kept.get(cellKey(3, 1)))).toBeUndefined(); // prob 0
+    const kept2 = rollKeepers(cells(), () => 0.1); // 0.1 < 0.5 → maybe kept
+    expect(won(kept2.get(cellKey(2, 1)))).toBe('maybe');
+  });
+
+  it('picks one of several rival candidates by cumulative probability, or none', () => {
+    const c = () => new Map<CellKey, MatrixCell>([
+      [cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: 'A', prob: 0.6 }, { playerId: 'B', prob: 0.3 }] }],
+    ]);
+    expect(won(rollKeepers(c(), () => 0.3).get(cellKey(1, 1)))).toBe('A'); // 0.3 < 0.6
+    expect(won(rollKeepers(c(), () => 0.75).get(cellKey(1, 1)))).toBe('B'); // 0.6 ≤ 0.75 < 0.9
+    expect(won(rollKeepers(c(), () => 0.95).get(cellKey(1, 1)))).toBeUndefined(); // ≥ 0.9 → nobody
+  });
+
+  it('a released cell drops its keepers but keeps other overrides', () => {
+    const c = new Map<CellKey, MatrixCell>([
+      [cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: 'x', prob: 0 }], assignedTeamSlot: 2 }],
+    ]);
+    const cell = rollKeepers(c, () => 0.5).get(cellKey(1, 1))!;
+    expect(cell.keepers).toBeUndefined();
+    expect(cell.assignedTeamSlot).toBe(2); // traded-pick override survives
+  });
+
+  it('certain keepers consume no randomness (seed stays aligned with bot picks)', () => {
+    let draws = 0;
+    rollKeepers(
+      new Map([[cellKey(1, 1), { round: 1, teamSlot: 1, keepers: [{ playerId: 'c', prob: 1 }] }]]),
+      () => { draws++; return 0.5; },
+    );
+    expect(draws).toBe(0);
   });
 });

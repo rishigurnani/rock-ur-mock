@@ -2,6 +2,7 @@ import { useDraftStore, listSessions, type SessionRec } from '../store/draftStor
 import { MODIFIER_LIBRARY } from '../data/presets';
 import { listDatasets } from '../data/datasets';
 import { BrainSliders } from './BrainSliders';
+import { maxKeepersPerTeam } from '../engine/matrix';
 import { range1 } from '../lib/util';
 import { useRef, useState } from 'react';
 import type { RosterSlot } from '../types';
@@ -119,6 +120,20 @@ export function SetupPanel() {
             value={config.roundCount}
             onChange={(e) => store.setConfig({ roundCount: Number(e.target.value) })}
             style={{ width: 64 }}
+          />
+        </div>
+        <div className="row">
+          <label>Keepers/team</label>
+          <input
+            type="number"
+            min={0}
+            max={20}
+            // With no explicit cap, reflect the most any team already keeps, so a
+            // loaded board never reads "0" while keepers sit on it.
+            value={config.keeperCount || maxKeepersPerTeam(store.cells)}
+            onChange={(e) => store.setConfig({ keeperCount: Number(e.target.value) })}
+            style={{ width: 64 }}
+            title="Max keepers per team (0 = no limit)"
           />
         </div>
         <div className="row">

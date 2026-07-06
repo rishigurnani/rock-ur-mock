@@ -25,16 +25,17 @@ const POOL: EffectivePlayer[] = [
 // Roster already holds a starting QB, so any pool QB is a backup.
 const ROSTER = [eff({ id: 'rosterQB', position: 'QB', adp: 1, projPoints: 400 })];
 
-// currentPick is pinned at 100 so only roundCount changes the draft fraction.
-const baseCtx = (roundCount: number): SelectContext => ({
+// One context builder for every test; overrides supply only what a case varies.
+const mkCtx = (over: Partial<SelectContext> = {}): SelectContext => ({
   available: POOL,
-  rosterPlayers: ROSTER,
-  config: { ...DEFAULT_LEAGUE, teamCount: 10, roundCount },
+  rosterPlayers: [],
+  config: { ...DEFAULT_LEAGUE, teamCount: 10 },
   modifiers: [],
   totalPlayerPool: 103,
-  currentPick: 100,
+  currentPick: 100, // pinned so only roundCount moves the draft fraction
   picksLeft: 5,
   rng: () => 0.5, // neutralizes the chaos roll (→ ×1)
+  ...over,
 });
 
 const scoreOf = (brain: Brain, ctx: SelectContext, id: string) =>
@@ -42,38 +43,27 @@ const scoreOf = (brain: Brain, ctx: SelectContext, id: string) =>
 
 describe('early backup QB/TE penalty', () => {
   const brain = PRESETS.balanced;
+  const backupCtx = (roundCount: number) =>
+    mkCtx({ rosterPlayers: ROSTER, config: { ...DEFAULT_LEAGUE, teamCount: 10, roundCount } });
 
   // currentPick is fixed at 100; only roundCount (hence draft fraction) changes.
   //   roundCount 20 → 100/200 = 0.50 < 0.67 → penalty applies
   //   roundCount 12 → 100/120 = 0.83 ≥ 0.67 → no penalty
   it('halves a backup QB drafted in the first 67% of the draft', () => {
-    const early = scoreOf(brain, baseCtx(20), 'qbA');
-    const late = scoreOf(brain, baseCtx(12), 'qbA');
-    expect(early / late).toBeCloseTo(0.5, 5);
+    expect(scoreOf(brain, backupCtx(20), 'qbA') / scoreOf(brain, backupCtx(12), 'qbA')).toBeCloseTo(0.5, 5);
   });
 
   it('does not penalize a non-backup position (RB starter still open)', () => {
-    const early = scoreOf(brain, baseCtx(20), 'rbA');
-    const late = scoreOf(brain, baseCtx(12), 'rbA');
-    expect(early).toBeCloseTo(late, 5);
+    expect(scoreOf(brain, backupCtx(20), 'rbA')).toBeCloseTo(scoreOf(brain, backupCtx(12), 'rbA'), 5);
   });
 });
 
 describe('round-1/2 chaos cap keys off the true pick, not pool depletion', () => {
   // Deep-looking pool (as in a keeper league where keepers are pulled out up
   // front) must NOT trick the engine into thinking it's late in the draft.
-  const ctx = (currentPick: number): SelectContext => ({
-    available: POOL,
-    rosterPlayers: [],
-    config: { ...DEFAULT_LEAGUE, teamCount: 10 },
-    modifiers: [],
-    totalPlayerPool: 200,
-    currentPick,
-    rng: () => 1, // max positive chaos swing
-  });
-  // taco = chaos 100 → weight 0.4; capped at 0.1 in rounds 1-2.
+  // taco = chaos 100 → weight 0.4; capped at 0.1 in rounds 1-2. rng()=1 = max swing.
   const chaosAt = (currentPick: number) =>
-    scoreCandidates(PRESETS.taco, ctx(currentPick))[0].trace.chaosRoll;
+    scoreCandidates(PRESETS.taco, mkCtx({ totalPlayerPool: 200, currentPick, rng: () => 1 }))[0].trace.chaosRoll;
 
   it('caps chaos at +10% at pick 5 (round 1)', () => {
     expect(chaosAt(5)).toBeCloseTo(1.1, 5);

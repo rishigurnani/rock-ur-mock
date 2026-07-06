@@ -16,7 +16,7 @@ import type {
   Team,
 } from '../types';
 import { applyModifiers, EffectivePlayer } from './modifiers';
-import { resolvePickOrder, CellKey } from './matrix';
+import { resolvePickOrder, rollKeepers, CellKey } from './matrix';
 import type { MatrixCell } from '../types';
 import { selectPick, Rng } from './bot';
 import { RosterState } from './roster';
@@ -65,23 +65,29 @@ export class DraftEngine {
       this.available.set(p.id, p);
     }
 
-    // Reserve keepers: lock them out of the draftable pool so no other team can
-    // grab them before their pre-assigned cell comes up.
-    if (setup.cells) {
-      for (const cell of setup.cells.values()) {
-        if (cell.keeperPlayerId) this.available.delete(cell.keeperPlayerId);
-      }
-    }
-
+    // Roll probabilistic keepers ONCE per build (seeded), then treat the
+    // survivors as ordinary locked keepers everywhere downstream.
+    const cells = setup.cells ? rollKeepers(setup.cells, this.rng) : undefined;
     this.order = resolvePickOrder({
       teamCount: setup.config.teamCount,
       roundCount: setup.config.roundCount,
       preset: setup.config.preset,
       defaultTimerSeconds: setup.defaultTimerSeconds ?? 60,
-      cells: setup.cells,
+      cells,
     });
+    this.reserveKeepers(cells);
+  }
 
-    // Group keepers by the team that owns their cell.
+  /** Lock kept players out of the pool and group them by their owning team, so
+   *  a keeper counts toward its roster from pick #1 (before its cell is reached). */
+  private reserveKeepers(cells?: Map<CellKey, MatrixCell>) {
+    if (cells) {
+      // Rolled cells carry their single resolved winner in keepers[0].
+      for (const cell of cells.values()) {
+        const kept = cell.keepers?.[0]?.playerId;
+        if (kept) this.available.delete(kept);
+      }
+    }
     for (const pick of this.order) {
       if (!pick.keeperPlayerId) continue;
       const arr = this.keepersBySlot.get(pick.owningTeamSlot) ?? [];
@@ -157,7 +163,11 @@ export class DraftEngine {
 
     const team = this.teamsBySlot.get(pick.owningTeamSlot);
     if (!team) throw new Error(`No team at slot ${pick.owningTeamSlot}`);
+    return this.botPick(pick, team);
+  }
 
+  /** Score the bot's options for `pick` and commit its choice. */
+  private botPick(pick: ResolvedPick, team: Team): CompletedPick {
     let picksLeft = 0;
     for (let i = this.cursor; i < this.order.length; i++) {
       if (this.order[i].owningTeamSlot === pick.owningTeamSlot) picksLeft++;
