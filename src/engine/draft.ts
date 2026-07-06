@@ -75,23 +75,20 @@ export class DraftEngine {
       defaultTimerSeconds: setup.defaultTimerSeconds ?? 60,
       cells,
     });
-    this.reserveKeepers(cells);
+    this.reserveKeepers();
   }
 
-  /** Lock kept players out of the pool and group them by their owning team, so
-   *  a keeper counts toward its roster from pick #1 (before its cell is reached). */
-  private reserveKeepers(cells?: Map<CellKey, MatrixCell>) {
-    if (cells) {
-      // Rolled cells carry their single resolved winner in keepers[0].
-      for (const cell of cells.values()) {
-        const kept = cell.keepers?.[0]?.playerId;
-        if (kept) this.available.delete(kept);
-      }
-    }
+  /** Lock kept players out of the pool and group them by owning team, so a keeper
+   *  counts toward its roster from pick #1 (before its cell is reached). Reads only
+   *  the resolved order: rollKeepers has already reduced each cell to its single
+   *  winner, which resolvePickOrder surfaces as keeperPlayerId. */
+  private reserveKeepers() {
     for (const pick of this.order) {
-      if (!pick.keeperPlayerId) continue;
+      const kept = pick.keeperPlayerId;
+      if (!kept) continue;
+      this.available.delete(kept);
       const arr = this.keepersBySlot.get(pick.owningTeamSlot) ?? [];
-      arr.push(pick.keeperPlayerId);
+      arr.push(kept);
       this.keepersBySlot.set(pick.owningTeamSlot, arr);
     }
   }
