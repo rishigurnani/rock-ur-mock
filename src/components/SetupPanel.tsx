@@ -228,16 +228,19 @@ export function SetupPanel() {
             <button className="mini" onClick={() => importRef.current?.click()}>Import</button>
           </span>
         </div>
-        {listSessions().map((sn) => (
+        {listSessions().map((sn) => {
+          const open = sn.id === store.activeSessionId;
+          return (
           <div className="row" key={sn.id}>
-            <label className="truncate"><b>{sn.name}</b> · <span className="num">{sn.status}</span></label>
+            <label className="truncate"><b>{sn.name}</b> · <span className="num">{open ? 'open' : sn.status}</span></label>
             <span>
-              <button className="mini" onClick={() => store.loadSession(sn.id)}>Open</button>{' '}
+              <button className={'mini' + (open ? ' primary' : '')} onClick={() => store.loadSession(sn.id)}>Open</button>{' '}
               <button className="mini" onClick={() => exportSession(sn)}>⤓</button>{' '}
               <button className="mini" onClick={() => store.deleteSession(sn.id)}>✕</button>
             </span>
           </div>
-        ))}
+          );
+        })}
         <input
           ref={importRef}
           type="file"

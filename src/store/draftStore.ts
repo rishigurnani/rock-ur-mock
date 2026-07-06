@@ -238,6 +238,7 @@ export interface DraftStore {
   started: boolean;
   version: number; // bump to force re-render after imperative engine mutation
   dirty: boolean; // an in-progress draft has unsaved changes (guards data loss)
+  activeSessionId: string | null; // the loaded saved session (null = unsaved/new board)
 
   // setup actions
   setDataset: (id: string) => void;
@@ -281,15 +282,17 @@ function startDraft(set: StoreSet) {
 
 function persistSession(name: string, get: StoreGet, set: StoreSet) {
   const s = get();
+  const id = String(Date.now());
   const list = listSessions().filter((x) => x.name !== name);
-  list.push({ id: String(Date.now()), name, savedAt: Date.now(), status: sessionStatus(s), snap: snapshot(s) });
+  list.push({ id, name, savedAt: Date.now(), status: sessionStatus(s), snap: snapshot(s) });
   writeSessions(list);
-  set({ dirty: false, version: s.version + 1 }); // saving clears unsaved changes
+  set({ dirty: false, activeSessionId: id, version: s.version + 1 }); // saving clears unsaved changes
 }
 
-// Make a saved/imported record the active draft (its cells + pool ride along).
+// Make a saved/imported record the active draft (its cells + pool ride along), and
+// mark it as the loaded session so the UI can point at it.
 const activate = (rec: SessionRec, set: StoreSet) =>
-  set((s) => ({ ...restoreState(rec.snap, s.version + 1), dirty: false }));
+  set((s) => ({ ...restoreState(rec.snap, s.version + 1), dirty: false, activeSessionId: rec.id }));
 
 function openSession(id: string, get: StoreGet, set: StoreSet) {
   if (!confirmDiscard(get().dirty, 'Open a saved draft')) return;
@@ -301,19 +304,20 @@ function openSession(id: string, get: StoreGet, set: StoreSet) {
 // same intent as opening it), so keepers/picks show immediately.
 function appendSession(rec: SessionRec, get: StoreGet, set: StoreSet) {
   if (!confirmDiscard(get().dirty, 'Import a draft')) return;
-  writeSessions([...listSessions(), { ...rec, id: String(Date.now()) }]);
-  activate(rec, set);
+  const saved = { ...rec, id: String(Date.now()) };
+  writeSessions([...listSessions(), saved]);
+  activate(saved, set);
 }
 
 function removeSession(id: string, set: StoreSet) {
   if (typeof window !== 'undefined' && !window.confirm('Delete this saved draft permanently?')) return;
   writeSessions(listSessions().filter((x) => x.id !== id));
-  set((s) => ({ version: s.version + 1 }));
+  set((s) => ({ activeSessionId: s.activeSessionId === id ? null : s.activeSessionId, version: s.version + 1 }));
 }
 
 function resetBoard(get: StoreGet, set: StoreSet) {
   if (!confirmDiscard(get().dirty, 'Reset the board')) return;
-  set({ engine: null, started: false, dirty: false, version: get().version + 1 });
+  set({ engine: null, started: false, dirty: false, activeSessionId: null, version: get().version + 1 });
 }
 
 /** Mutate the live engine via `run`, then flag unsaved changes + re-render. */
@@ -338,6 +342,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   started: false,
   version: 0,
   dirty: false,
+  activeSessionId: null,
 
   setDataset: (id) => set((s) => swapDataset(s, id)),
 

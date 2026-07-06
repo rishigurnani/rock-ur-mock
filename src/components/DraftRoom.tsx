@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDraftStore } from '../store/draftStore';
 import { optimizeLineup, byeClashes, type LineupSeat } from '../engine/roster';
 import { indexById, range1, playerMeta, matchesQuery } from '../lib/util';
@@ -26,6 +26,11 @@ export function DraftRoom() {
   const [query, setQuery] = useState('');
   const [rosterSlot, setRosterSlot] = useState(store.humanSlot ?? 1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Loading a different draft (or a fresh start) builds a new engine instance —
+  // snap the roster view back to "My roster". Saves and picks reuse the same
+  // engine, so a mid-draft team selection sticks.
+  useEffect(() => setRosterSlot(store.humanSlot ?? 1), [engine, store.humanSlot]);
 
   const playerById = useMemo(() => indexById(players), [players]);
 
