@@ -1,28 +1,33 @@
 # Rock Ur Mock
 
-**A faster way to run a fantasy football mock draft.**
-
-Rock Ur Mock is a browser-based mock draft simulator. Set up a league, tune your
-bot opponents, and draft. Every pick a bot makes
-comes with a full breakdown of the math behind it.
+A browser-based fantasy football mock draft simulator. Set up a league, tune a
+roster of bot opponents, and draft — every bot pick shows the math behind it.
 
 ![Rock Ur Mock](docs/rock-ur-mock.png)
 
-## What is Rock Ur Mock?
+## What it is
 
-Rock Ur Mock lets you rehearse your fantasy draft against opponents you control.
-You configure the league (teams, rounds, roster, scoring), give each bot a
-personality, and either draft your own team or watch a full simulation play out.
+A small, self-contained tool for rehearsing a fantasy draft against opponents you
+configure. You set the league (teams, rounds, roster, scoring), give each bot a
+personality, and either draft your own team or watch the whole thing simulate. It
+runs entirely in the browser — no account, no server.
 
-## Why choose Rock Ur Mock?
+## What sets it apart
 
-- **Fully transparent.** Hover any pick on the board to see the exact score
-  breakdown (value, ADP, roster need, age, and the chaos roll) that produced it.
-- **Bots you actually control.** Each bot is four sliders — ADP bias, chaos,
-  roster need, and age upside — so you can build a value-hunter, a reacher, or a
-  wildcard.
-- **Runs entirely in your browser.** No account, no server, no setup beyond
-  `npm install`.
+Plenty of mock draft tools exist; these are the pieces this one leans into:
+
+- **Bring your own rankings.** It ships with a default set, but you can swap
+  ranking sources or upload any FantasyPros-style CSV — columns are matched by
+  alias, so most exports drop in without code changes.
+- **Keepers with probability.** A keeper needn't be locked in: give it a percent
+  chance, let two players compete for the same pick ("keep A or B"), or set a
+  per-team cap — each simulation rolls a fresh, valid keeper set.
+- **Swap draft slots.** Nudge any team left or right before the draft to trade
+  draft position; its keepers and seat come along.
+- **Transparent bot picks.** Hover any pick to see the exact score breakdown —
+  value, ADP, roster need, age, and the chaos roll — that produced it.
+- **Bots you control.** Each bot is four sliders (ADP bias, chaos, roster need,
+  age upside), so you can shape a value-hunter, a reacher, or a wildcard.
 
 ## Installation
 
@@ -44,22 +49,26 @@ Then open http://localhost:5173 in your browser and you're ready to draft.
 Want an injury what-if? Zero out a player's projected points and re-run to see
 how the board shifts.
 
-## Give me more!
+## Features
 
 | Feature | What it does |
 |---------|--------------|
-| **Pick Matrix** | Snake/linear order, traded picks, keepers, and per-pick timers |
-| **Slider bots** | Four sliders per bot define every draft personality |
-| **God-Mode traces** | The full scoring math behind every bot pick, on hover |
-| **What-if injuries** | Zero a player's projection to simulate them being out |
-| **Custom rankings** | Swap ranking sources or upload your own CSV |
+| Pick Matrix | Snake/linear order, traded picks, keepers, and per-pick timers on one board |
+| Probabilistic keepers | Percent-chance keepers, "keep A or B" candidates, and a per-team cap |
+| Slot swapping | Move a team's draft position before the draft |
+| Custom rankings | Swap ranking sources or upload your own CSV |
+| Slider bots | Four sliders per bot shape every draft personality |
+| Universal modifiers | One-click rules like TE Premium, Superflex, or a rookie ADP boost |
+| God-Mode traces | The full scoring math behind every bot pick, on hover |
+| What-if injuries | Zero a player's projection to simulate them being out |
+| Bye-week management | Flags weeks where too many of your starters sit out |
 
 ## Where your drafts are saved
 
 Saved drafts live in your **browser's localStorage** under the key
-`rockurmock.sessions`. They stick around across page refreshes as long as you
-use the same browser on the same machine. Clearing your browser's site data
-removes them.
+`rockurmock.sessions`. They stick around across page refreshes as long as you use
+the same browser on the same machine. Clearing your browser's site data removes
+them.
 
 There's no server or database yet: `db/schema.sql` sketches the PostgreSQL schema
 for a future backend, but nothing is wired up to it. Everything runs client-side.
