@@ -5,7 +5,7 @@
 
 import type { Player, Position, RosterSlot } from '../types';
 
-const FLEX_ELIGIBLE: Position[] = ['RB', 'WR', 'TE'];
+const FLEX_ELIGIBLE = new Set<Position>(['RB', 'WR', 'TE']);
 
 // Order in which starting slots are filled by the lineup optimizer.
 const STARTER_SLOTS: RosterSlot[] = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DST'];
@@ -51,7 +51,7 @@ export function optimizeLineup(
     for (let i = 0; i < (slots[slot] ?? 0); i++) {
       const player =
         slot === 'FLEX'
-          ? take((x) => FLEX_ELIGIBLE.includes(x.position))
+          ? take((x) => FLEX_ELIGIBLE.has(x.position))
           : take((x) => x.position === slot);
       starters.push({ slot, player });
     }

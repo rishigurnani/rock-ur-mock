@@ -122,6 +122,9 @@ select, input {
 .player-row .name { font-weight: 600; }
 .player-row .num { color: var(--muted); font-size: 11px; }
 .mini { padding: 3px 8px; font-size: 12px; }
+.seat-swap { display: inline-flex; gap: 2px; margin-left: 4px; }
+.seat-swap .mini { padding: 0 4px; line-height: 1.4; }
+.seat-swap .mini:disabled { opacity: 0.3; cursor: default; }
 
 /* Sliders */
 .slider-row { display: grid; grid-template-columns: 130px 1fr 36px; gap: 8px; align-items: center; margin-bottom: 6px; }

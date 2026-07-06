@@ -6,7 +6,8 @@ import { indexById, range1 } from '../lib/util';
 
 export function PickMatrix() {
   // Subscribe to the whole store; `version` bumps re-render after engine mutations.
-  const { players, config, cells, engine, version } = useDraftStore();
+  const store = useDraftStore();
+  const { players, config, cells, engine, version } = store;
 
   const playerById = useMemo(() => indexById(players), [players]);
 
@@ -49,7 +50,16 @@ export function PickMatrix() {
             <tr>
               <th>R</th>
               {teamSlots.map((s) => (
-                <th key={s}>Team {s}</th>
+                <th key={s}>
+                  Team {s}
+                  {/* Pre-draft: nudge a team's seat to switch draft position. */}
+                  {!engine && (
+                    <span className="seat-swap">
+                      <button className="mini" disabled={s === 1} onClick={() => store.swapSlots(s, s - 1)} title="Move earlier">◀</button>
+                      <button className="mini" disabled={s === config.teamCount} onClick={() => store.swapSlots(s, s + 1)} title="Move later">▶</button>
+                    </span>
+                  )}
+                </th>
               ))}
             </tr>
           </thead>

@@ -144,6 +144,27 @@ function renamedForSeat(teams: Team[], slot: number | null): Team[] {
   }));
 }
 
+/** Swap two draft seats: every slot-indexed piece of setup — team brains, keeper
+ *  cells (and any traded-pick target pointing at them) and your own seat — trades
+ *  places, so the two managers switch positions in the order. The one primitive
+ *  behind move-left, move-right, reverse and shuffle. Pre-draft only. */
+export function swapSeats(s: DraftStore, a: number, b: number): Partial<DraftStore> {
+  if (a === b) return {};
+  const other = (n: number) => (n === a ? b : n === b ? a : n);
+  const humanSlot = s.humanSlot == null ? null : other(s.humanSlot);
+  const teams = renamedForSeat(
+    s.teams.map((t) => ({ ...t, slot: other(t.slot) })).sort((x, y) => x.slot - y.slot),
+    humanSlot,
+  );
+  const cells = new Map<CellKey, MatrixCell>();
+  for (const c of s.cells.values()) {
+    const teamSlot = other(c.teamSlot);
+    const assignedTeamSlot = c.assignedTeamSlot == null ? undefined : other(c.assignedTeamSlot);
+    cells.set(cellKey(c.round, teamSlot), { ...c, teamSlot, assignedTeamSlot });
+  }
+  return { teams, cells, humanSlot };
+}
+
 /** Toggle a library modifier on/off by key. */
 function toggledModifiers(mods: Modifier[], key: keyof typeof MODIFIER_LIBRARY): Modifier[] {
   const lib = MODIFIER_LIBRARY[key];
@@ -313,6 +334,7 @@ export interface DraftStore {
   toggleModifier: (key: keyof typeof MODIFIER_LIBRARY) => void;
   setConfig: (patch: Partial<LeagueConfig>) => void;
   setHumanSlot: (slot: number | null) => void;
+  swapSlots: (a: number, b: number) => void;
   setBrain: (slot: number, brain: Brain) => void;
   setKeeper: (round: number, teamSlot: number, playerId: string, prob?: number) => void;
   overridePlayer: (playerId: string, patch: Partial<Pick<Player, 'adp' | 'projPoints'>>) => void;
@@ -414,6 +436,8 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   setConfig: (patch) => set((s) => configPatch(s, patch)),
 
   setHumanSlot: (slot) => set((s) => ({ humanSlot: slot, teams: renamedForSeat(s.teams, slot) })),
+
+  swapSlots: (a, b) => set((s) => swapSeats(s, a, b)),
 
   setBrain: (slot, brain) =>
     set((s) => ({ teams: s.teams.map((t) => (t.slot === slot ? { ...t, brain } : t)) })),

@@ -123,29 +123,37 @@ function rollTeam(cells: MatrixCell[], kmax: number, rng: () => number): MatrixC
   return rolled;
 }
 
+/** Group keeper-bearing cell keys by owning team, preserving insertion order. */
+function keeperCellsByTeam(cells: Map<CellKey, MatrixCell>): Map<number, CellKey[]> {
+  const byTeam = new Map<number, CellKey[]>();
+  for (const [key, cell] of cells) {
+    if (hasKeeper(cell)) byTeam.set(cell.teamSlot, [...(byTeam.get(cell.teamSlot) ?? []), key]);
+  }
+  return byTeam;
+}
+
 /**
  * Resolve which candidate (if any) each keeper cell keeps THIS run, reducing every
  * cell to its single winner. Pure: no mutation.
  *
- * With no cap (`keeperCount` absent) each cell rolls independently. With a cap the
- * roll is enforced per team — see {@link rollTeam}. `keeperCount` 0 keeps nobody.
+ * With no cap (`keeperCount` absent) each cell rolls independently, in insertion
+ * order (so a seeded draft consumes randomness identically to its bot picks). With
+ * a cap the roll is enforced per team (see {@link rollTeam}); `keeperCount` 0 keeps
+ * nobody. Non-keeper cells always pass through unchanged.
  */
 export function rollKeepers(
   cells: Map<CellKey, MatrixCell>,
   rng: () => number,
   keeperCount?: number,
 ): Map<CellKey, MatrixCell> {
-  const out = new Map<CellKey, MatrixCell>();
-  const byTeam = new Map<number, CellKey[]>();
-
-  for (const [key, cell] of cells) {
-    if (!hasKeeper(cell)) out.set(key, cell);
-    else if (keeperCount == null) out.set(key, isFixed(cell) ? cell : rollCell(cell, rng));
-    else byTeam.set(cell.teamSlot, [...(byTeam.get(cell.teamSlot) ?? []), key]);
+  const out = new Map(cells);
+  if (keeperCount == null) {
+    for (const [key, cell] of cells)
+      if (hasKeeper(cell) && !isFixed(cell)) out.set(key, rollCell(cell, rng));
+    return out;
   }
-
-  for (const keys of byTeam.values()) {
-    const rolled = rollTeam(keys.map((k) => cells.get(k)!), keeperCount!, rng);
+  for (const keys of keeperCellsByTeam(cells).values()) {
+    const rolled = rollTeam(keys.map((k) => cells.get(k)!), keeperCount, rng);
     keys.forEach((k, i) => out.set(k, rolled[i]));
   }
   return out;

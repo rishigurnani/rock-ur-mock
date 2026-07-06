@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { snapshot, restoreState, remapCells, confirmDiscard, hydratePlayers, assignKeeper, type Snapshot, type DraftStore } from '../draftStore';
+import { snapshot, restoreState, remapCells, confirmDiscard, hydratePlayers, assignKeeper, swapSeats, type Snapshot, type DraftStore } from '../draftStore';
 import type { Player } from '../../types';
 import { loadDataset } from '../../data/datasets';
 import { cellKey, resolvePickOrder } from '../../engine/matrix';
@@ -201,5 +201,29 @@ describe('assignKeeper — candidate entry', () => {
       cells: [{ round: 1, teamSlot: 1, keeperPlayerId: KEEP_A }] } as unknown as Snapshot;
     const patch = restoreState(legacy, 1);
     expect(keptId(patch.cells!.get(cellKey(1, 1)))).toBe(KEEP_A);
+  });
+});
+
+describe('swapSeats — switching draft positions', () => {
+  it('moves a team every slot-indexed thing: keepers, seat, and labels', () => {
+    // Team 1 (the human, with both keepers) trades positions with Team 2.
+    const p = swapSeats(preDraftWithKeepers(), 1, 2);
+    expect(p.humanSlot).toBe(2); // your seat follows you
+    expect(keptId(p.cells!.get(cellKey(1, 2)))).toBe(KEEP_A); // keepers land on the new column
+    expect(keptId(p.cells!.get(cellKey(3, 2)))).toBe(KEEP_B);
+    expect(p.cells!.has(cellKey(1, 1))).toBe(false); // and vacate the old one
+    expect(p.teams!.find((t) => t.slot === 2)?.name).toBe('You');
+    expect(p.teams!.find((t) => t.slot === 1)?.name).toBe('Bot 1');
+    expect(p.teams!.map((t) => t.slot)).toEqual([...Array(10)].map((_, i) => i + 1)); // still 1..10
+  });
+
+  it('reassigns traded-pick targets too, and round-trips (a no-op self-swap included)', () => {
+    expect(swapSeats(preDraftWithKeepers(), 3, 3)).toEqual({}); // self-swap changes nothing
+    const s = { ...preDraftWithKeepers(),
+      cells: new Map([[cellKey(2, 5), { round: 2, teamSlot: 5, assignedTeamSlot: 8 }]]) } as DraftStore;
+    const once = swapSeats(s, 5, 8);
+    expect(once.cells!.get(cellKey(2, 8))?.assignedTeamSlot).toBe(5); // 5↔8 everywhere
+    const back = swapSeats({ ...s, ...once } as DraftStore, 5, 8);
+    expect(back.cells!.get(cellKey(2, 5))?.assignedTeamSlot).toBe(8); // round-trips to origin
   });
 });
