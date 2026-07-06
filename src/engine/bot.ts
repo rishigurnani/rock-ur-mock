@@ -3,15 +3,13 @@
 // ----------------------------------------------------------------------------
 // Every bot is four 0-100 sliders. Each slider maps to exactly one term in the
 // Draft Score, and every intermediate value is returned as a ScoreTrace so the
-// God-Mode tooltip is free and the pick is fully explainable.
+// tooltip is free and the pick is fully explainable.
 // ============================================================================
 
-import type { Brain, LeagueConfig, Player, Position, ScoreTrace } from '../types';
-import type { EffectivePlayer } from './modifiers';
+import type { Brain, LeagueConfig, Modifier, Player, Position, ScoreTrace } from '../types';
+import { rosterMaxByMatch, violatesRosterMax, type EffectivePlayer } from './modifiers';
 import { computeBaselines, vbdOf } from './vbd';
 import { optimizeLineup, marginalStartingValue } from './roster';
-import { rosterMaxByMatch, violatesRosterMax } from './modifiers';
-import type { Modifier } from '../types';
 
 /** Injectable RNG so drafts are reproducible in tests. Defaults to Math.random. */
 export type Rng = () => number;
@@ -45,11 +43,7 @@ function round2(n: number): number {
 }
 
 /** Tally a roster by position (for roster_max caps and the backup penalty). */
-function countByPosition(players: { position: Position }[]): Partial<Record<Position, number>> {
-  const counts: Partial<Record<Position, number>> = {};
-  for (const p of players) counts[p.position] = (counts[p.position] ?? 0) + 1;
-  return counts;
-}
+function countByPosition(players: { position: Position }[]): Partial<Record<Position, number>> { const counts: Partial<Record<Position, number>> = {}; for (const p of players) counts[p.position] = (counts[p.position] ?? 0) + 1; return counts; }
 
 /** View an effective player through the lineup optimizer's projected-points lens. */
 const asStarter = (p: EffectivePlayer): Player => ({ ...p, projPoints: p.effProjPoints });
@@ -67,15 +61,9 @@ function reachPenaltyFor(effAdp: number, currentPick: number): number {
 }
 
 /** Halve a backup QB/TE (beyond the starting requirement) in the first 67%. */
-function earlyBackupPenalty(
-  player: EffectivePlayer,
-  positionCounts: Partial<Record<Position, number>>,
-  config: LeagueConfig,
-  draftFraction: number,
-): number {
+function earlyBackupPenalty(player: EffectivePlayer, positionCounts: Partial<Record<Position, number>>, config: LeagueConfig, draftFraction: number): number {
   if (player.position !== 'QB' && player.position !== 'TE') return 1.0;
-  const req = config.rosterSlots[player.position] ?? 0;
-  const have = positionCounts[player.position] ?? 0;
+  const req = config.rosterSlots[player.position] ?? 0; const have = positionCounts[player.position] ?? 0;
   return req > 0 && have >= req && draftFraction < 0.67 ? 0.5 : 1.0;
 }
 
@@ -83,10 +71,7 @@ function earlyBackupPenalty(
  * Score every legal candidate and return them sorted best-first.
  * Exposed (rather than only the winner) so the UI can show the shortlist.
  */
-export function scoreCandidates(
-  brain: Brain,
-  ctx: SelectContext,
-): ScoredCandidate[] {
+export function scoreCandidates(brain: Brain, ctx: SelectContext): ScoredCandidate[] {
   const env = pickEnv(brain, ctx);
   const scored: ScoredCandidate[] = [];
   for (const player of ctx.available) {
@@ -99,23 +84,7 @@ export function scoreCandidates(
 }
 
 /** Everything derivable ONCE per pick — computed here, reused for every candidate. */
-interface PickEnv {
-  w: { adp: number; chaos: number; need: number; age: number };
-  baselines: ReturnType<typeof computeBaselines>;
-  caps: ReturnType<typeof rosterMaxByMatch>;
-  positionCounts: Partial<Record<Position, number>>;
-  config: LeagueConfig;
-  totalPlayerPool: number;
-  rosterStarters: Player[];
-  slots: LeagueConfig['rosterSlots'];
-  baseStartingValue: number;
-  pressure: number;
-  redundancyBuffer: number;
-  currentPick: number;
-  isRound1Or2: boolean;
-  draftFraction: number;
-  rng: Rng;
-}
+interface PickEnv { w: { adp: number; chaos: number; need: number; age: number; }; baselines: ReturnType<typeof computeBaselines>; caps: ReturnType<typeof rosterMaxByMatch>; positionCounts: Partial<Record<Position, number>>; config: LeagueConfig; totalPlayerPool: number; rosterStarters: Player[]; slots: LeagueConfig['rosterSlots']; baseStartingValue: number; pressure: number; redundancyBuffer: number; currentPick: number; isRound1Or2: boolean; draftFraction: number; rng: Rng; }
 
 function pickEnv(brain: Brain, ctx: SelectContext): PickEnv {
   const slots = ctx.config.rosterSlots;
@@ -128,21 +97,16 @@ function pickEnv(brain: Brain, ctx: SelectContext): PickEnv {
   return {
     w: { adp: brain.adpBias / 100, chaos: brain.chaos / 100, need: brain.rosterNeed / 100, age: brain.ageUpside / 100 },
     // Baselines recomputed once per pick against the current pool, not per candidate.
-    baselines: computeBaselines(ctx.available, ctx.config),
-    caps: rosterMaxByMatch(ctx.modifiers),
-    positionCounts: countByPosition(ctx.rosterPlayers),
-    config: ctx.config,
-    totalPlayerPool: ctx.totalPlayerPool,
-    rosterStarters,
-    slots,
+    baselines: computeBaselines(ctx.available, ctx.config), caps: rosterMaxByMatch(ctx.modifiers),
+    positionCounts: countByPosition(ctx.rosterPlayers), config: ctx.config,
+    totalPlayerPool: ctx.totalPlayerPool, rosterStarters, slots,
     baseStartingValue: baseLineup.startingPoints,
     // Completion pressure: fraction of remaining picks that MUST become starters,
     // so bots fill a legal lineup (K/DST) late instead of hoarding skill players.
     pressure: Math.min(1, baseLineup.unfilled.length / Math.max(ctx.picksLeft ?? 999, 1)),
     // Early draft (over half the pool left) tolerates more redundancy.
     redundancyBuffer: ctx.available.length > ctx.totalPlayerPool / 2 ? 0.125 : 0.25,
-    currentPick,
-    isRound1Or2: currentPick <= teams * 2,
+    currentPick, isRound1Or2: currentPick <= teams * 2,
     draftFraction: currentPick / (teams * ctx.config.roundCount),
     rng: ctx.rng ?? Math.random,
   };
@@ -164,8 +128,7 @@ function scoreOne(player: EffectivePlayer, env: PickEnv): ScoredCandidate {
   // rewards lineup impact (slider- and urgency-scaled) and fades redundancy.
   const msv = marginalStartingValue(env.rosterStarters, asStarter(player), env.slots, env.baseStartingValue);
   const startImpact = player.effProjPoints > 0 ? Math.min(1, msv / player.effProjPoints) : 0;
-  const needMultiplier =
-    1 + (w.need * 0.3 + env.pressure * 0.5) * startImpact - env.redundancyBuffer * (1 - startImpact);
+  const needMultiplier = 1 + (w.need * 0.3 + env.pressure * 0.5) * startImpact - env.redundancyBuffer * (1 - startImpact);
 
   // 3. Age/upside tilt.
   const ageMultiplier = 1 + (player.tags.includes('Rookie') ? w.age * 0.3 : -w.age * 0.1);
@@ -176,47 +139,38 @@ function scoreOne(player: EffectivePlayer, env: PickEnv): ScoredCandidate {
   const reachPenalty = reachPenaltyFor(player.effAdp, env.currentPick);
   const backupPenalty = earlyBackupPenalty(player, env.positionCounts, env.config, env.draftFraction);
 
-  const finalScore =
-    baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty * backupPenalty;
-
+  const finalScore = baseValue * needMultiplier * ageMultiplier * chaosRoll * reachPenalty * backupPenalty;
   return {
-    player,
-    finalScore,
+    player, finalScore,
     trace: {
-      playerId: player.id,
-      baseValue: round2(baseValue),
+      playerId: player.id, baseValue: round2(baseValue),
       adpBlendLabel: `${Math.round(w.adp * 100)}% ADP / ${Math.round((1 - w.adp) * 100)}% VBD`,
-      needMultiplier: round2(needMultiplier),
-      ageMultiplier: round2(ageMultiplier),
-      chaosRoll: round2(chaosRoll),
-      finalScore: round2(finalScore),
+      needMultiplier: round2(needMultiplier), ageMultiplier: round2(ageMultiplier),
+      chaosRoll: round2(chaosRoll), finalScore: round2(finalScore),
     },
   };
 }
 
 /** Pick the single best candidate for a bot. Returns null if none are legal. */
-export function selectPick(
-  brain: Brain,
-  ctx: SelectContext,
-): ScoredCandidate | null {
+export function selectPick(brain: Brain, ctx: SelectContext): ScoredCandidate | null {
   const scored = scoreCandidates(brain, ctx);
   return scored[0] ?? null;
 }
 
 export const PRESETS: Record<string, Brain> = {
-  balanced: { adpBias: 50, chaos: 20, rosterNeed: 40, ageUpside: 50 },
+  balanced:      { adpBias: 50, chaos: 20, rosterNeed: 40, ageUpside: 50 },
   // Sharp: pure value (100% VBD), light variance, real roster discipline.
-  sharp: { adpBias: 0, chaos: 10, rosterNeed: 50, ageUpside: 40 },
+  sharp:         { adpBias:  0, chaos: 10, rosterNeed: 50, ageUpside: 40 },
   // Follows the crowd, low variance.
-  sharkADP: { adpBias: 90, chaos: 5, rosterNeed: 30, ageUpside: 40 },
+  sharkADP:      { adpBias: 90, chaos:  5, rosterNeed: 30, ageUpside: 40 },
   // Pure value hunter.
-  vbdRobot: { adpBias: 0, chaos: 0, rosterNeed: 20, ageUpside: 40 },
+  vbdRobot:      { adpBias:  0, chaos:  0, rosterNeed: 20, ageUpside: 40 },
   // The Taco — maximum chaos.
-  taco: { adpBias: 30, chaos: 100, rosterNeed: 20, ageUpside: 60 },
+  taco:          { adpBias: 30, chaos:100, rosterNeed: 20, ageUpside: 60 },
   // Fills needs relentlessly.
-  needFirst: { adpBias: 40, chaos: 10, rosterNeed: 100, ageUpside: 40 },
+  needFirst:     { adpBias: 40, chaos: 10, rosterNeed:100, ageUpside: 40 },
   // Dynasty upside chaser.
-  youthMovement: { adpBias: 35, chaos: 25, rosterNeed: 30, ageUpside: 100 },
+  youthMovement: { adpBias: 35, chaos: 25, rosterNeed: 30, ageUpside:100 },
 };
 
 export type { Player };
