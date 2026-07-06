@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePickOrder, rollKeepers, cellKey } from '../matrix';
+import { resolvePickOrder, rollKeepers, cellKey, keptPlayerId } from '../matrix';
 import type { MatrixCell } from '../../types';
 import { CellKey } from '../matrix';
 
@@ -54,7 +54,7 @@ describe('Pick Matrix resolver', () => {
       cells,
     });
     expect(picks[0].timerSeconds).toBe(120);
-    expect(picks[0].keeperPlayerId).toBe('p5'); // lone candidate resolves to occupant
+    expect(keptPlayerId(picks[0])).toBe('p5'); // lone candidate resolves to occupant
     expect(picks[1].timerSeconds).toBe(60);
   });
 });

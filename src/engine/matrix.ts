@@ -4,7 +4,7 @@
 // Turns a SPARSE set of cell overrides + a preset into a concrete, ordered
 // list of picks. This one function generalizes Snake, Linear, 3rd-Round
 // Reversal (paint round 3 in reverse via cell reassignment), traded picks
-// (assignedTeamSlot), keepers (keeperPlayerId), and per-cell timers.
+// (assignedTeamSlot), keepers (candidate lists), and per-cell timers.
 // ============================================================================
 
 import type { KeeperOption, MatrixCell, MatrixPreset, ResolvedPick } from '../types';
@@ -13,6 +13,14 @@ export type CellKey = `${number}:${number}`;
 
 export function cellKey(round: number, teamSlot: number): CellKey {
   return `${round}:${teamSlot}`;
+}
+
+/** The single keeper locked into a cell/pick THIS run — the lone candidate once
+ *  the cell is rolled (or a lone certain keeper shown pre-roll). Undefined while
+ *  rival candidates still compete. The candidate list is the one representation;
+ *  this derives from it, so no parallel field can drift out of sync. */
+export function keptPlayerId(source: { keepers?: KeeperOption[] }): string | undefined {
+  return source.keepers?.length === 1 ? source.keepers[0].playerId : undefined;
 }
 
 export interface ResolveOptions {
@@ -50,17 +58,15 @@ export function resolvePickOrder(opts: ResolveOptions): ResolvedPick[] {
     for (const teamSlot of order) {
       overall += 1;
       const cell = cells.get(cellKey(round, teamSlot));
-      const keepers = cell?.keepers;
       picks.push({
         overall,
         round,
         teamSlot,
         owningTeamSlot: cell?.assignedTeamSlot ?? teamSlot,
         timerSeconds: cell?.timerSeconds ?? defaultTimerSeconds,
-        // A single candidate resolves to a locked occupant (shown live and in
-        // preview); multiple candidates stay unresolved until the run is rolled.
-        keeperPlayerId: keepers?.length === 1 ? keepers[0].playerId : undefined,
-        keepers,
+        // The candidate list is the single source of truth; the lone resolved
+        // keeper is derived on demand via keptPlayerId(pick).
+        keepers: cell?.keepers,
       });
     }
   }

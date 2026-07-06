@@ -110,10 +110,9 @@ export interface ResolvedPick {
   /** Who actually makes the selection (accounts for traded picks). */
   owningTeamSlot: number;
   timerSeconds: number;
-  /** The single keeper resolved for this run (set once the cell is rolled, or
-   *  when there is exactly one candidate). Absent => an ordinary pick. */
-  keeperPlayerId?: string;
-  /** Keeper candidates carried through for pre-draft preview / editing. */
+  /** Keeper candidates for this pick: many pre-roll (preview), one once rolled,
+   *  none for an ordinary pick. The lone resolved keeper is derived via matrix's
+   *  `keptPlayerId(pick)` — this candidate list is the single representation. */
   keepers?: KeeperOption[];
 }
 

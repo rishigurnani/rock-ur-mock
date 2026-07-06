@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { snapshot, restoreState, remapCells, confirmDiscard, hydratePlayers, assignKeeper, swapSeats, type Snapshot, type DraftStore } from '../draftStore';
 import type { Player } from '../../types';
 import { loadDataset } from '../../data/datasets';
-import { cellKey, resolvePickOrder } from '../../engine/matrix';
+import { cellKey, resolvePickOrder, keptPlayerId } from '../../engine/matrix';
 import { DraftEngine } from '../../engine/draft';
 import { DEFAULT_LEAGUE } from '../../data/presets';
 import { PRESETS } from '../../engine/bot';
@@ -35,7 +35,7 @@ const throughFile = (snap: Snapshot): Snapshot => JSON.parse(JSON.stringify(snap
 const keptId = (cell?: import('../../types').MatrixCell) => cell?.keepers?.[0]?.playerId;
 
 // How PickMatrix decides who occupies a cell (completed pick, else keeper).
-const occupantId = (pick: ResolvedPick, completedId?: string) => completedId ?? pick.keeperPlayerId;
+const occupantId = (pick: ResolvedPick, completedId?: string) => completedId ?? keptPlayerId(pick);
 
 describe('Session save/restore — keeper persistence (the reported bug)', () => {
   it('keeper cells survive snapshot → JSON file → restore', () => {

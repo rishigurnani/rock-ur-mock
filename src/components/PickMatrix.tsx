@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useDraftStore } from '../store/draftStore';
 import type { CompletedPick, Player } from '../types';
-import { resolvePickOrder } from '../engine/matrix';
+import { resolvePickOrder, keptPlayerId } from '../engine/matrix';
 import { indexById, range1 } from '../lib/util';
 
 export function PickMatrix() {
@@ -75,7 +75,7 @@ export function PickMatrix() {
                   const isKeeper = candidates.length > 0;
                   // A completed pick or a lone resolved keeper shows one player;
                   // an unrolled cell with rival candidates lists them all.
-                  const occupantId = done?.playerId ?? pick.keeperPlayerId;
+                  const occupantId = done?.playerId ?? keptPlayerId(pick);
                   const player = occupantId ? playerById.get(occupantId) : undefined;
                   const soleProb = candidates.length === 1 ? candidates[0].prob : undefined;
                   const onClock = pick.overall === currentOverall;

@@ -16,7 +16,7 @@ import type {
   Team,
 } from '../types';
 import { applyModifiers, EffectivePlayer } from './modifiers';
-import { resolvePickOrder, rollKeepers, CellKey } from './matrix';
+import { resolvePickOrder, rollKeepers, keptPlayerId, CellKey } from './matrix';
 import type { MatrixCell } from '../types';
 import { selectPick, Rng } from './bot';
 import { RosterState } from './roster';
@@ -81,10 +81,10 @@ export class DraftEngine {
   /** Lock kept players out of the pool and group them by owning team, so a keeper
    *  counts toward its roster from pick #1 (before its cell is reached). Reads only
    *  the resolved order: rollKeepers has already reduced each cell to its single
-   *  winner, which resolvePickOrder surfaces as keeperPlayerId. */
+   *  winner, which keptPlayerId reads off the pick's candidate list. */
   private reserveKeepers() {
     for (const pick of this.order) {
-      const kept = pick.keeperPlayerId;
+      const kept = keptPlayerId(pick);
       if (!kept) continue;
       this.available.delete(kept);
       const arr = this.keepersBySlot.get(pick.owningTeamSlot) ?? [];
@@ -150,8 +150,9 @@ export class DraftEngine {
     if (!pick) return null;
 
     // Keeper: locked player (reserved out of the pool), no bot logic.
-    if (pick.keeperPlayerId) {
-      const keeper = this.byId.get(pick.keeperPlayerId);
+    const kept = keptPlayerId(pick);
+    if (kept) {
+      const keeper = this.byId.get(kept);
       if (keeper) return this.commit(pick, keeper, undefined);
       // Keeper id not in dataset (e.g. stale) — fall through to auto-pick.
     }
