@@ -2,6 +2,8 @@ import { useDraftStore } from './store/draftStore';
 import { SetupPanel } from './components/SetupPanel';
 import { PickMatrix } from './components/PickMatrix';
 import { DraftRoom } from './components/DraftRoom';
+import { MockStats } from './components/MockStats';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App() {
   const store = useDraftStore();
@@ -38,11 +40,14 @@ export function App() {
 
       <div className="grid-2">
         <SetupPanel />
-        <div>
-          <PickMatrix />
-          <DraftRoom />
-        </div>
+        <ErrorBoundary>
+          <div>
+            <PickMatrix />
+            <DraftRoom />
+          </div>
+        </ErrorBoundary>
       </div>
+      <ErrorBoundary><MockStats /></ErrorBoundary>
     </div>
   );
 }

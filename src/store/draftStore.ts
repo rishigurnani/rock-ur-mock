@@ -25,6 +25,7 @@ import {
 } from '../data/datasets';
 import { DEFAULT_LEAGUE, makeModifier, MODIFIER_LIBRARY } from '../data/presets';
 import { mulberry32 } from '../lib/util';
+import { listSessions, writeSessions, mergeSessions, hydratePlayers, SNAPSHOT_SCHEMA, type Snapshot, type SessionRec } from './sessions';
 
 function defaultTeams(count: number, humanSlot: number | null): Team[] {
   const presetKeys = Object.keys(PRESETS);
@@ -149,55 +150,6 @@ function sessionStatus(s: DraftStore): string {
   return !s.started ? 'Setup' : done >= total ? 'Complete' : 'In progress';
 }
 
-// --- Sessions: the draft log, persisted to localStorage --------------------
-// Snapshots are SELF-CONTAINED: the whole pool is stored inline, so uploaded
-// CSVs, per-player overrides and injury what-ifs all persist, and a session is
-// portable (export/import) independent of the dataset registry.
-interface Snapshot extends Pick<DraftStore, 'datasetId' | 'players' | 'config' | 'modifiers' | 'teams' | 'humanSlot' | 'seed' | 'started'> {
-  cells: MatrixCell[];
-  picks: string[];
-}
-export interface SessionRec { id: string; name: string; savedAt: number; status: string; snap: Snapshot; }
-export type { Snapshot };
-
-const SKEY = 'rockurmock.sessions';
-// One-time migration: carry saved drafts over from the old "sleeperg" key so
-// nothing is lost on the rename. Guarded for non-browser (test) environments.
-if (typeof localStorage !== 'undefined') {
-  try {
-    const legacy = localStorage.getItem('sleeperg.sessions');
-    if (legacy && !localStorage.getItem(SKEY)) localStorage.setItem(SKEY, legacy);
-    if (legacy) localStorage.removeItem('sleeperg.sessions');
-  } catch { /* ignore */ }
-}
-export function listSessions(): SessionRec[] {
-  try { return JSON.parse(localStorage.getItem(SKEY) || '[]'); } catch { return []; }
-}
-const writeSessions = (l: SessionRec[]) => localStorage.setItem(SKEY, JSON.stringify(l));
-
-/** The snapshot's own dataset, or the default pool when it's gone — an uploaded
- *  CSV lives only in memory and vanishes on reload, so `upload-*` ids won't
- *  resolve, but its players share the standard names we can still source from. */
-function poolFor(datasetId: string): Player[] {
-  try {
-    return loadDataset(datasetId);
-  } catch {
-    return loadDataset(DEFAULT_DATASET_ID);
-  }
-}
-
-/**
- * Backfill player attributes a snapshot predates (e.g. bye weeks, added after
- * some drafts were saved), matched by name. Only fills gaps — never clobbers a
- * saved value or a per-player override.
- */
-export function hydratePlayers(players: Player[], datasetId: string): Player[] {
-  const byeByName = new Map(poolFor(datasetId).map((p) => [p.name, p.bye]));
-  return players.map((p) =>
-    p.bye == null && byeByName.get(p.name) != null ? { ...p, bye: byeByName.get(p.name) } : p,
-  );
-}
-
 /**
  * Rebuild the store patch from a snapshot — the single restore path shared by
  * "Open" (a saved session) and "Import" (a dropped JSON file). Keeper cells and
@@ -217,6 +169,7 @@ export function restoreState(snap: Snapshot, version: number): Partial<DraftStor
 
 export function snapshot(s: DraftStore): Snapshot {
   return {
+    schema: SNAPSHOT_SCHEMA,
     datasetId: s.datasetId, players: s.players, config: s.config, modifiers: s.modifiers,
     teams: s.teams, humanSlot: s.humanSlot, seed: s.seed, started: s.started,
     cells: [...s.cells.values()],
@@ -256,6 +209,7 @@ export interface DraftStore {
   loadSession: (id: string) => void;
   deleteSession: (id: string) => void;
   importSession: (rec: SessionRec) => void;
+  importAll: (recs: SessionRec[]) => void;
 
   // draft lifecycle
   start: () => void;
@@ -312,7 +266,10 @@ function appendSession(rec: SessionRec, get: StoreGet, set: StoreSet) {
 function removeSession(id: string, set: StoreSet) {
   if (typeof window !== 'undefined' && !window.confirm('Delete this saved draft permanently?')) return;
   writeSessions(listSessions().filter((x) => x.id !== id));
-  set((s) => ({ activeSessionId: s.activeSessionId === id ? null : s.activeSessionId, version: s.version + 1 }));
+  set((s) => ({
+    activeSessionId: s.activeSessionId === id ? null : s.activeSessionId,
+    version: s.version + 1,
+  }));
 }
 
 function resetBoard(get: StoreGet, set: StoreSet) {
@@ -373,6 +330,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   loadSession: (id) => openSession(id, get, set),
   deleteSession: (id) => removeSession(id, set),
   importSession: (rec) => appendSession(rec, get, set),
+  importAll: (recs) => { mergeSessions(recs); set((s) => ({ version: s.version + 1 })); },
   reset: () => resetBoard(get, set),
   step: () => advance(get, set, (e) => { if (!e.isComplete) e.step(); }),
   autoToHuman: () => advance(get, set, (e) => e.runToCompletion()),

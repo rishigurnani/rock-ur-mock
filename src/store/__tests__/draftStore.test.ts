@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
-import { snapshot, restoreState, confirmDiscard, hydratePlayers, assignKeeper, swapSeats, type Snapshot, type DraftStore } from '../draftStore';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { snapshot, restoreState, confirmDiscard, assignKeeper, swapSeats, type DraftStore } from '../draftStore';
+import { hydratePlayers, listSessions, mergeSessions, type SessionRec, type Snapshot } from '../sessions';
 import type { Player } from '../../types';
 import { loadDataset } from '../../data/datasets';
 import { cellKey, resolvePickOrder, keptPlayerId, remapCells } from '../../engine/matrix';
@@ -225,5 +226,36 @@ describe('swapSeats — switching draft positions', () => {
     expect(once.cells!.get(cellKey(2, 8))?.assignedTeamSlot).toBe(5); // 5↔8 everywhere
     const back = swapSeats({ ...s, ...once } as DraftStore, 5, 8);
     expect(back.cells!.get(cellKey(2, 5))?.assignedTeamSlot).toBe(8); // round-trips to origin
+  });
+});
+
+describe('backup resilience — merge + corruption fallback', () => {
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    for (const k of Object.keys(store)) delete store[k];
+    (globalThis as unknown as { localStorage: Storage }).localStorage = {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+    } as Storage;
+  });
+  const rec = (id: string, name = id): SessionRec => ({ id, name, savedAt: 0, status: 'x', snap: {} as Snapshot });
+
+  it('merges by id (incoming wins) and restores the whole log', () => {
+    mergeSessions([rec('1', 'A'), rec('2', 'B')]);
+    expect(listSessions().map((s) => s.name)).toEqual(['A', 'B']);
+    mergeSessions([rec('2', 'B2'), rec('3', 'C')]); // update 2, add 3
+    expect(listSessions().map((s) => s.name)).toEqual(['A', 'B2', 'C']);
+  });
+
+  it('falls back to the mirror when the primary key is corrupted (no silent wipe)', () => {
+    mergeSessions([rec('1', 'A')]); // writes primary + mirror
+    store['rockurmock.sessions'] = '{ broken json';
+    expect(listSessions().map((s) => s.name)).toEqual(['A']); // recovered from ~bak
+  });
+
+  it('respects a legitimately empty log (no zombie drafts)', () => {
+    store['rockurmock.sessions'] = '[]';
+    expect(listSessions()).toEqual([]);
   });
 });

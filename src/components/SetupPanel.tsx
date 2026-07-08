@@ -1,4 +1,6 @@
-import { useDraftStore, listSessions, type SessionRec } from '../store/draftStore';
+import { useDraftStore } from '../store/draftStore';
+import { listSessions, type SessionRec } from '../store/sessions';
+import { useCompare } from '../store/compare';
 import { MODIFIER_LIBRARY } from '../data/presets';
 import { listDatasets } from '../data/datasets';
 import { BrainSliders } from './BrainSliders';
@@ -23,6 +25,7 @@ const MODIFIER_LABELS: Record<keyof typeof MODIFIER_LIBRARY, string> = {
 
 export function SetupPanel() {
   const store = useDraftStore();
+  const compare = useCompare();
   const { config, modifiers, teams, humanSlot } = store;
   const [editSlot, setEditSlot] = useState(1);
   const [sessName, setSessName] = useState('');
@@ -37,14 +40,23 @@ export function SetupPanel() {
   const onUpload = (file: File) =>
     readText(file, (t) => store.uploadDataset(file.name.replace(/\.csv$/i, ''), t));
 
-  // Portable drafts: snapshots are self-contained, so a session is one JSON file.
-  const exportSession = (sn: SessionRec) => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(sn)], { type: 'application/json' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: `${sn.name}.rockurmock.json` });
+  // Portable drafts: snapshots are self-contained, so one JSON file holds a draft
+  // (or the whole log). This file lives on YOUR disk — the durable backup that
+  // survives a cleared browser, a new profile, or a port change.
+  const download = (data: unknown, name: string) => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
     a.click();
     URL.revokeObjectURL(url);
   };
-  const onImport = (file: File) => readText(file, (t) => store.importSession(JSON.parse(t)));
+  const exportSession = (sn: SessionRec) => download(sn, `${sn.name}.rockurmock.json`);
+  const exportAll = () => download(listSessions(), `rock-ur-mock-backup-${new Date().toISOString().slice(0, 10)}.json`);
+  // Import restores either a single draft (object) or a full backup (array).
+  const onImport = (file: File) =>
+    readText(file, (t) => {
+      const data = JSON.parse(t);
+      Array.isArray(data) ? store.importAll(data) : store.importSession(data);
+    });
   // Hidden-input change → the first file, then reset so re-picking the same file fires again.
   const pickFile = (onFile: (f: File) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -225,14 +237,28 @@ export function SetupPanel() {
             >
               Save
             </button>{' '}
-            <button className="mini" onClick={() => importRef.current?.click()}>Import</button>
+            <button className="mini" title="Restore a draft or a full backup file" onClick={() => importRef.current?.click()}>Import</button>
           </span>
         </div>
+        {listSessions().length > 0 && (
+          <div className="row">
+            <label className="truncate">{listSessions().length} saved · back up to a file</label>
+            <button className="mini primary" onClick={exportAll}>⤓ Backup all</button>
+          </div>
+        )}
         {listSessions().map((sn) => {
           const open = sn.id === store.activeSessionId;
           return (
-          <div className="row" key={sn.id}>
-            <label className="truncate"><b>{sn.name}</b> · <span className="num">{open ? 'open' : sn.status}</span></label>
+          <div className={'row' + (open ? ' open-row' : '')} key={sn.id}>
+            <label className="truncate">
+              <input
+                type="checkbox"
+                title="Compare in Mock Stats (check 2+ drafts)"
+                checked={compare.ids.includes(sn.id)}
+                onChange={() => compare.toggle(sn.id)}
+              />{' '}
+              <b>{sn.name}</b> · <span className="num">{open ? 'open' : sn.status}</span>
+            </label>
             <span>
               <button className={'mini' + (open ? ' primary' : '')} onClick={() => store.loadSession(sn.id)}>Open</button>{' '}
               <button className="mini" onClick={() => exportSession(sn)}>⤓</button>{' '}
