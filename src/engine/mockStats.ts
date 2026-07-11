@@ -8,7 +8,7 @@
 
 import type { MatrixCell, Player } from '../types';
 import type { Snapshot } from '../store/sessions';
-import { cellKey, resolvePickOrder, CellKey } from './matrix';
+import { cellKey, resolvePickOrder, keeperCandidates, CellKey } from './matrix';
 import { optimizeLineup } from './roster';
 
 /** Exactly the slice of a saved Snapshot the stats read, plus its name. Derived
@@ -58,7 +58,7 @@ export function mockStats(mocks: MockInput[]): MockReport {
     // A pick is a KEEPER when the player taken there is one of that cell's keeper
     // candidates — reserved, never on the draft board, so kept off the market.
     const kept = new Set<string>();
-    order.forEach((o, i) => { if (o.keepers?.some((k) => k.playerId === m.picks[i])) kept.add(m.picks[i]); });
+    order.forEach((o, i) => { if (keeperCandidates(o).some((k) => k.playerId === m.picks[i])) kept.add(m.picks[i]); });
 
     const mine: Player[] = [];
     m.picks.forEach((id, i) => {

@@ -101,20 +101,24 @@ export interface LeagueConfig {
 
 // ---- Draft runtime ---------------------------------------------------------
 
-/** A fully-resolved pick position after applying the sparse matrix. */
-export interface ResolvedPick {
+/** A fully-resolved pick position after applying the sparse matrix. Keepers are a
+ *  loud VARIANT here, not an optional field, so no code can read a pick without
+ *  acknowledging keeper state — read it only via matrix's `keptPlayerId(pick)` /
+ *  `keeperCandidates(pick)`, never by reaching into a `kind`. */
+interface PickBase {
   overall: number;
   round: number;
-  /** The board column this pick sits in. */
-  teamSlot: number;
-  /** Who actually makes the selection (accounts for traded picks). */
-  owningTeamSlot: number;
+  teamSlot: number; // the board column this pick sits in
+  owningTeamSlot: number; // who actually makes the selection (accounts for traded picks)
   timerSeconds: number;
-  /** Keeper candidates for this pick: many pre-roll (preview), one once rolled,
-   *  none for an ordinary pick. The lone resolved keeper is derived via matrix's
-   *  `keptPlayerId(pick)` — this candidate list is the single representation. */
-  keepers?: KeeperOption[];
 }
+/** An open pick the owning team drafts. */
+export interface DraftSlot extends PickBase { kind: 'draft' }
+/** A locked keeper — post-roll, or a lone certain candidate shown pre-roll. */
+export interface KeeperSlot extends PickBase { kind: 'keeper'; keeper: KeeperOption }
+/** Pre-roll preview only: rival candidates competing for the pick, unresolved. */
+export interface ContestedSlot extends PickBase { kind: 'contested'; candidates: KeeperOption[] }
+export type ResolvedPick = DraftSlot | KeeperSlot | ContestedSlot;
 
 /** Transparent breakdown behind a single bot valuation (God-Mode tooltip). */
 export interface ScoreTrace {

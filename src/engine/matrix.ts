@@ -19,8 +19,15 @@ export function cellKey(round: number, teamSlot: number): CellKey {
  *  the cell is rolled (or a lone certain keeper shown pre-roll). Undefined while
  *  rival candidates still compete. The candidate list is the one representation;
  *  this derives from it, so no parallel field can drift out of sync. */
-export function keptPlayerId(source: { keepers?: KeeperOption[] }): string | undefined {
-  return source.keepers?.length === 1 ? source.keepers[0].playerId : undefined;
+export function keptPlayerId(pick: ResolvedPick): string | undefined {
+  return pick.kind === 'keeper' ? pick.keeper.playerId : undefined;
+}
+
+/** The keeper candidates to preview at a pick — the locked one, the competing set,
+ *  or none. The single accessor for a pick's options, so callers read keeper state
+ *  through here (or {@link keptPlayerId}) and never destructure the variant. */
+export function keeperCandidates(pick: ResolvedPick): KeeperOption[] {
+  return pick.kind === 'keeper' ? [pick.keeper] : pick.kind === 'contested' ? pick.candidates : [];
 }
 
 /** Read the board ahead for the team on the clock at `cursor`: how many DRAFTABLE
@@ -160,16 +167,19 @@ export function resolvePickOrder(opts: ResolveOptions): ResolvedPick[] {
     for (const teamSlot of order) {
       overall += 1;
       const cell = cells.get(cellKey(round, teamSlot));
-      picks.push({
-        overall,
-        round,
-        teamSlot,
+      const base = {
+        overall, round, teamSlot,
         owningTeamSlot: cell?.assignedTeamSlot ?? teamSlot,
         timerSeconds: cell?.timerSeconds ?? defaultTimerSeconds,
-        // The candidate list is the single source of truth; the lone resolved
-        // keeper is derived on demand via keptPlayerId(pick).
-        keepers: cell?.keepers,
-      });
+      };
+      const keepers = cell?.keepers;
+      // The cell's candidate count picks the variant: 0 → open, 1 → locked keeper,
+      // 2+ → still contested (a pre-roll preview cell the roll hasn't resolved).
+      picks.push(
+        !keepers?.length ? { ...base, kind: 'draft' }
+          : keepers.length === 1 ? { ...base, kind: 'keeper', keeper: keepers[0] }
+            : { ...base, kind: 'contested', candidates: keepers },
+      );
     }
   }
 
