@@ -23,6 +23,26 @@ export function keptPlayerId(source: { keepers?: KeeperOption[] }): string | und
   return source.keepers?.length === 1 ? source.keepers[0].playerId : undefined;
 }
 
+/** Read the board ahead for the team on the clock at `cursor`: how many DRAFTABLE
+ *  picks it has left, and how many pool players are taken before its next one.
+ *  Keeper slots auto-fill from players reserved up front, so they are neither a
+ *  real pick nor a pool depletion — they're skipped in both counts. */
+export function draftHorizon(order: ResolvedPick[], cursor: number, slot: number): { picksLeft: number; untilNext: number } {
+  let picksLeft = 0;
+  let untilNext = 0;
+  let foundNext = false;
+  for (let i = cursor; i < order.length; i++) {
+    if (keptPlayerId(order[i])) continue; // keeper slot: no draft, no pool depletion
+    if (order[i].owningTeamSlot === slot) {
+      picksLeft++;
+      if (i > cursor) foundNext = true; // the next slot where this team actually drafts
+    } else if (!foundNext) {
+      untilNext++;
+    }
+  }
+  return { picksLeft, untilNext };
+}
+
 // --- Cell editing: build/mutate the sparse cell map ------------------------
 // Kept beside resolution so the whole keeper-cell lifecycle lives in one place;
 // callers orchestrate (which slot, which pool) and never hand-edit cells.

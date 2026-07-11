@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { scoreCandidates, PRESETS, type SelectContext } from '../bot';
+import { scoreCandidates, positionalNeed, PRESETS, type SelectContext } from '../bot';
+import type { Position } from '../../types';
 import type { EffectivePlayer } from '../modifiers';
 import { DEFAULT_LEAGUE } from '../../data/presets';
 import type { Brain } from '../../types';
@@ -55,6 +56,48 @@ describe('early backup QB/TE penalty', () => {
 
   it('does not penalize a non-backup position (RB starter still open)', () => {
     expect(scoreOf(brain, backupCtx(20), 'rbA')).toBeCloseTo(scoreOf(brain, backupCtx(12), 'rbA'), 5);
+  });
+});
+
+describe('need: redundancy penalty hits only pure bench depth', () => {
+  const needOf = (ctx: SelectContext, id: string) =>
+    scoreCandidates(PRESETS.balanced, ctx).find((c) => c.player.id === id)!.trace.needMultiplier;
+  const oneRb = (rosterProj: number, candProj: number) =>
+    mkCtx({
+      available: [eff({ id: 'cand', position: 'RB', projPoints: candProj })],
+      rosterPlayers: [eff({ id: 'held', position: 'RB', projPoints: rosterProj })],
+      config: { ...DEFAULT_LEAGUE, teamCount: 10, rosterSlots: { RB: 1 } },
+    });
+
+  it('a partial upgrade over an existing starter is never scored below 1', () => {
+    // Held RB (120) starts; a better RB (260) upgrades the slot → startImpact ~0.5.
+    expect(needOf(oneRb(120, 260), 'cand')).toBeGreaterThanOrEqual(1);
+  });
+
+  it('pure bench depth (cannot crack the lineup) still gets the penalty', () => {
+    // Slot already held by a stronger RB (260); a weaker RB (120) is depth → < 1.
+    expect(needOf(oneRb(260, 120), 'cand')).toBeLessThan(1);
+  });
+});
+
+describe('positionalNeed: starter-quality holes (A) + scarcity/VONA (B)', () => {
+  const BASE: Record<Position, number> = { QB: 300, RB: 200, WR: 200, TE: 100, K: 100, DST: 100 };
+  const oneRb = (over: Partial<SelectContext>) =>
+    mkCtx({ config: { ...DEFAULT_LEAGUE, teamCount: 10, rosterSlots: { RB: 1 } }, picksUntilNext: 2, ...over });
+
+  it('A: a below-baseline incumbent leaves a hole; a starter-caliber one does not', () => {
+    const hole = positionalNeed(oneRb({ rosterPlayers: [eff({ id: 'weak', position: 'RB', projPoints: 120 })], available: [] }), BASE).RB;
+    const set = positionalNeed(oneRb({ rosterPlayers: [eff({ id: 'stud', position: 'RB', projPoints: 260 })], available: [] }), BASE).RB;
+    expect(hole).toBeGreaterThan(set);
+    expect(set).toBe(0); // incumbent ≥ baseline and no scarcity → no need
+  });
+
+  it('B: scarcity rises when the position cliffs before your next pick', () => {
+    const rb = (id: string, projPoints: number) => eff({ id, position: 'RB', projPoints });
+    const deep = [rb('a', 250), rb('b', 248), rb('c', 246)];
+    const shallow = [rb('a', 250), rb('b', 120), rb('c', 118)];
+    const of = (avail: typeof deep) => positionalNeed(oneRb({ rosterPlayers: [], available: avail }), BASE).RB;
+    expect(of(shallow)).toBeGreaterThan(of(deep));
   });
 });
 

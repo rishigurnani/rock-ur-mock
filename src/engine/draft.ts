@@ -16,7 +16,7 @@ import type {
   Team,
 } from '../types';
 import { applyModifiers, EffectivePlayer } from './modifiers';
-import { resolvePickOrder, rollKeepers, keptPlayerId, CellKey } from './matrix';
+import { resolvePickOrder, rollKeepers, keptPlayerId, draftHorizon, CellKey } from './matrix';
 import type { MatrixCell } from '../types';
 import { selectPick, Rng } from './bot';
 import { RosterState } from './roster';
@@ -166,10 +166,7 @@ export class DraftEngine {
 
   /** Score the bot's options for `pick` and commit its choice. */
   private botPick(pick: ResolvedPick, team: Team): CompletedPick {
-    let picksLeft = 0;
-    for (let i = this.cursor; i < this.order.length; i++) {
-      if (this.order[i].owningTeamSlot === pick.owningTeamSlot) picksLeft++;
-    }
+    const { picksLeft, untilNext } = draftHorizon(this.order, this.cursor, pick.owningTeamSlot);
 
     const rosterPlayers = this.teamPlayerIds(pick.owningTeamSlot)
       .map((id) => this.byId.get(id))
@@ -182,6 +179,7 @@ export class DraftEngine {
       totalPlayerPool: this.effective.length,
       currentPick: pick.overall,
       picksLeft,
+      picksUntilNext: untilNext,
       rng: this.rng,
     });
     if (!choice) throw new Error('No legal pick available');

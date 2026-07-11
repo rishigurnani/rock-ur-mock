@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePickOrder, rollKeepers, cellKey, keptPlayerId, type ResolveOptions } from '../matrix';
+import { resolvePickOrder, rollKeepers, cellKey, keptPlayerId, draftHorizon, type ResolveOptions } from '../matrix';
 import type { MatrixCell } from '../../types';
 import { CellKey } from '../matrix';
 import { mulberry32 as seededRng } from '../../lib/util';
@@ -43,6 +43,19 @@ describe('Pick Matrix resolver', () => {
 });
 
 const won = (cell?: MatrixCell) => cell?.keepers?.[0]?.playerId;
+
+describe('draftHorizon — keeper-aware next pick & pool depletion', () => {
+  it('skips keeper slots for both remaining picks and the depletion horizon', () => {
+    // 2-team, 3-round snake; team 1 owns overalls 1, 4, 5 — and 4 is a keeper.
+    const cells = new Map<CellKey, MatrixCell>([
+      [cellKey(2, 1), { round: 2, teamSlot: 1, keepers: [{ playerId: 'k', prob: 1 }] }],
+    ]);
+    const order = resolvePickOrder({ teamCount: 2, roundCount: 3, preset: 'snake', defaultTimerSeconds: 60, cells });
+    const h = draftHorizon(order, 0, 1); // team 1 on the clock at overall 1
+    expect(h.picksLeft).toBe(2); // overall 1 (now) + 5; the R2 keeper (overall 4) is not a draft pick
+    expect(h.untilNext).toBe(2); // overalls 2 & 3 deplete the pool before team 1 drafts again at 5
+  });
+});
 
 describe('rollKeepers (probabilistic keepers)', () => {
   const cells = () => new Map<CellKey, MatrixCell>([

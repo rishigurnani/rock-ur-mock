@@ -35,6 +35,8 @@ export interface SelectContext {
   currentPick: number;
   /** Picks this team has left (incl. the current one). Drives fill urgency. */
   picksLeft?: number;
+  /** Picks until this team is on the clock again — the VONA scarcity horizon. */
+  picksUntilNext?: number;
   rng?: Rng;
 }
 
@@ -83,8 +85,39 @@ export function scoreCandidates(brain: Brain, ctx: SelectContext): ScoredCandida
   return scored;
 }
 
+const FLEX_ELIGIBLE = new Set<Position>(['RB', 'WR', 'TE']);
+const ALL_POS: Position[] = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+
+/** Per-position roster-need signal ∈ [0, ~2]: how short you are of starter-caliber
+ *  bodies there — an incumbent below the replacement baseline counts as a hole
+ *  (Signal A) — PLUS how steeply the position cliffs before your next pick, i.e.
+ *  VONA (Signal B). Higher = address this position now. */
+export function positionalNeed(
+  ctx: SelectContext,
+  baselines: Record<Position, number>,
+): Record<Position, number> {
+  const slots = ctx.config.rosterSlots;
+  const flexShare = (slots.FLEX ?? 0) / FLEX_ELIGIBLE.size;
+  const horizon = ctx.picksUntilNext ?? ctx.config.teamCount;
+  const availByPos = new Map<Position, number[]>();
+  for (const p of ctx.available) availByPos.set(p.position, [...(availByPos.get(p.position) ?? []), p.effProjPoints]);
+
+  const out = {} as Record<Position, number>;
+  for (const pos of ALL_POS) {
+    const demand = (slots[pos] ?? 0) + (FLEX_ELIGIBLE.has(pos) ? flexShare : 0);
+    const held = ctx.rosterPlayers.filter((p) => p.position === pos && p.effProjPoints >= baselines[pos]).length;
+    const gap = demand > 0 ? Math.max(0, demand - held) / demand : 0; // Signal A
+    const avail = (availByPos.get(pos) ?? []).sort((a, b) => b - a);
+    const best = avail[0] ?? 0;
+    const next = avail[Math.min(horizon, avail.length - 1)] ?? 0;
+    const scarcity = best > 0 ? Math.max(0, best - next) / best : 0; // Signal B (VONA)
+    out[pos] = gap + scarcity;
+  }
+  return out;
+}
+
 /** Everything derivable ONCE per pick — computed here, reused for every candidate. */
-interface PickEnv { w: { adp: number; chaos: number; need: number; age: number; }; baselines: ReturnType<typeof computeBaselines>; caps: ReturnType<typeof rosterMaxByMatch>; positionCounts: Partial<Record<Position, number>>; config: LeagueConfig; totalPlayerPool: number; rosterStarters: Player[]; slots: LeagueConfig['rosterSlots']; baseStartingValue: number; pressure: number; redundancyBuffer: number; currentPick: number; isRound1Or2: boolean; draftFraction: number; rng: Rng; }
+interface PickEnv { w: { adp: number; chaos: number; need: number; age: number; }; baselines: ReturnType<typeof computeBaselines>; caps: ReturnType<typeof rosterMaxByMatch>; positionCounts: Partial<Record<Position, number>>; config: LeagueConfig; totalPlayerPool: number; rosterStarters: Player[]; slots: LeagueConfig['rosterSlots']; baseStartingValue: number; pressure: number; redundancyBuffer: number; positionalNeed: Record<Position, number>; currentPick: number; isRound1Or2: boolean; draftFraction: number; rng: Rng; }
 
 function pickEnv(brain: Brain, ctx: SelectContext): PickEnv {
   const slots = ctx.config.rosterSlots;
@@ -94,10 +127,11 @@ function pickEnv(brain: Brain, ctx: SelectContext): PickEnv {
   // which reserved keepers would inflate — breaking the round-1/2 chaos cap).
   const currentPick = ctx.currentPick;
   const teams = ctx.config.teamCount;
+  // Baselines recomputed once per pick against the current pool, not per candidate.
+  const baselines = computeBaselines(ctx.available, ctx.config);
   return {
     w: { adp: brain.adpBias / 100, chaos: brain.chaos / 100, need: brain.rosterNeed / 100, age: brain.ageUpside / 100 },
-    // Baselines recomputed once per pick against the current pool, not per candidate.
-    baselines: computeBaselines(ctx.available, ctx.config), caps: rosterMaxByMatch(ctx.modifiers),
+    baselines, positionalNeed: positionalNeed(ctx, baselines), caps: rosterMaxByMatch(ctx.modifiers),
     positionCounts: countByPosition(ctx.rosterPlayers), config: ctx.config,
     totalPlayerPool: ctx.totalPlayerPool, rosterStarters, slots,
     baseStartingValue: baseLineup.startingPoints,
@@ -123,12 +157,19 @@ function scoreOne(player: EffectivePlayer, env: PickEnv): ScoredCandidate {
   const baseValue = (1 - w.adp) * vbd + w.adp * adpValue;
 
   // 2. Roster-need (quality-aware): startImpact is the share of this player's
-  // value that would reach our optimized STARTING lineup — 1 for a brand-new
-  // starter or an upgrade over a weak keeper, 0 for pure bench depth. Need
-  // rewards lineup impact (slider- and urgency-scaled) and fades redundancy.
+  // value that reaches our optimized STARTING lineup — 1 for a brand-new starter,
+  // a fraction for an upgrade over an existing starter, 0 for pure bench depth.
+  // The redundancy penalty is for DEPTH only: anyone who cracks the lineup
+  // (startImpact > 0) is a starter and is exempt, even on a partial upgrade.
+  // (Rosters here are post keeper-roll: kept keepers count fully, released ones not.)
   const msv = marginalStartingValue(env.rosterStarters, asStarter(player), env.slots, env.baseStartingValue);
   const startImpact = player.effProjPoints > 0 ? Math.min(1, msv / player.effProjPoints) : 0;
-  const needMultiplier = 1 + (w.need * 0.3 + env.pressure * 0.5) * startImpact - env.redundancyBuffer * (1 - startImpact);
+  const redundancy = startImpact > 0 ? 0 : env.redundancyBuffer;
+  // Positional urgency (slider-scaled): a below-baseline hole at, or a scarcity
+  // cliff before your next pick for, this player's position — but only a
+  // starter-caliber body (vbd > 0) actually answers that need.
+  const posNeed = vbd > 0 ? env.positionalNeed[player.position] : 0;
+  const needMultiplier = 1 + (w.need * 0.3 + env.pressure * 0.5) * startImpact + w.need * 0.15 * posNeed - redundancy;
 
   // 3. Age/upside tilt.
   const ageMultiplier = 1 + (player.tags.includes('Rookie') ? w.age * 0.3 : -w.age * 0.1);
