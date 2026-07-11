@@ -1,9 +1,18 @@
 # Rock Ur Mock
+***Built by a fantasy football junkie for fantasy football junkies***
 
-A browser-based fantasy football mock draft simulator. Set up a league, tune a
+Rock Ur Mock is a browser-based fantasy football mock draft simulator. Set up a league, tune a
 roster of bot opponents, and draft — every bot pick shows the math behind it.
 
 ![Rock Ur Mock](docs/rock-ur-mock.png)
+
+## Why I built this
+
+I have a competitive keeper league with my college buddies and kept running into what if scenarios during the offseason that free tools wouldn't support. These what-ifs include:
+- I'm not sure exactly which keepers my league mates will choose. So I would like to set probabilities to different players being kept.
+- I'm not sure which draft slot my league mates will choose, so I would like to be able to easily copy over keepers between different slots
+- I'm not sure which draft strategy my league mates will choose, so I would like to be able to simulate different draft strategies
+- I'm not sure which draft slot I should pick, so I would like to run a bunch of mocks from slot A and a bunch in slot B, and then track stats across how good my board looks across each slot.
 
 ## What it is
 
