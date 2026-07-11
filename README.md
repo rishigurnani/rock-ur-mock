@@ -37,6 +37,9 @@ Plenty of mock draft tools exist; these are the pieces this one leans into:
   value, ADP, roster need, age, and the chaos roll — that produced it.
 - **Bots you control.** Each bot is four sliders (ADP bias, chaos, roster need,
   age upside), so you can shape a value-hunter, a reacher, or a wildcard.
+- **Compare across mocks.** Save any number of drafts, then check two or more to
+  open a Mock Stats rail — starter floor/ceiling, best- and worst-case boards, and
+  how often each player lands on your team — so you can settle "slot A or slot B?"
 
 ## Installation
 
@@ -54,6 +57,8 @@ Then open http://localhost:5173 in your browser and you're ready to draft.
 2. **Tune the bots** — drag the four sliders on each team to shape how they draft.
 3. **Draft** — take your own team's picks, or hit run and watch the whole thing
    simulate. Hover any completed pick to see why the bot chose that player.
+4. **Compare setups** — save a few mocks, then check two or more in the Drafts
+   panel to open the Mock Stats rail and see which slot or strategy drafts better.
 
 Want an injury what-if? Zero out a player's projected points and re-run to see
 how the board shifts.
@@ -62,7 +67,7 @@ how the board shifts.
 
 | Feature | What it does |
 |---------|--------------|
-| Pick Matrix | Snake/linear order, traded picks, keepers, and per-pick timers on one board |
+| Pick Matrix | Snake/linear order, traded picks, keepers (with keep-A-or-B odds), and the pick on the clock, all on one board |
 | Probabilistic keepers | Percent-chance keepers, "keep A or B" candidates, and a per-team cap |
 | Slot swapping | Move a team's draft position before the draft |
 | Custom rankings | Swap ranking sources or upload your own CSV |
@@ -71,13 +76,16 @@ how the board shifts.
 | God-Mode traces | The full scoring math behind every bot pick, on hover |
 | What-if injuries | Zero a player's projection to simulate them being out |
 | Bye-week management | Flags weeks where too many of your starters sit out |
+| Mock Stats | Compare 2+ saved drafts — starter floor/ceiling, best/worst outcome, and each player's draft rate |
+| Save / backup drafts | Name and store mocks, export any or all to JSON, and import them back |
 
 ## Where your drafts are saved
 
 Saved drafts live in your **browser's localStorage** under the key
 `rockurmock.sessions`. They stick around across page refreshes as long as you use
 the same browser on the same machine. Clearing your browser's site data removes
-them.
+them — so to keep a draft safe or move it to another machine, use **Backup all**
+(or a single draft's ⤓) to export JSON, and **Import** to restore it.
 
 There's no server or database yet: `db/schema.sql` sketches the PostgreSQL schema
 for a future backend, but nothing is wired up to it. Everything runs client-side.
@@ -93,7 +101,8 @@ for a future backend, but nothing is wired up to it. Everything runs client-side
   | Modifier rules | `src/engine/modifiers.ts` |
   | Bot scoring | `src/engine/bot.ts`, `src/engine/vbd.ts`, `src/engine/roster.ts` |
   | Player data / CSV parsing | `src/data/datasets.ts`, `src/data/parseRankings.ts` |
-  | State + session save/restore | `src/store/draftStore.ts` |
+  | Cross-mock stats | `src/engine/mockStats.ts`, `src/store/compare.ts` |
+  | State + session save/restore | `src/store/draftStore.ts`, `src/store/sessions.ts` |
 
 - **Testing** — `npm test` runs the engine test suite. `npm run build`
   typechecks and produces a production build.
