@@ -76,6 +76,9 @@ select, input {
 .open-row { box-shadow: inset 3px 0 0 var(--accent); background: rgba(88, 166, 255, 0.08); border-radius: 4px; }
 /* Keep a row's trailing action buttons together on one line; the label truncates. */
 .row > span { flex-shrink: 0; white-space: nowrap; }
+/* Declutter the draft list: keep Open visible, reveal ⤓/✕ on hover or focus. */
+.draft-row span button ~ button { opacity: 0; visibility: hidden; transition: opacity .12s; }
+.draft-row:hover span button ~ button, .draft-row:focus-within span button ~ button { opacity: 1; visibility: visible; }
 
 /* Mock Stats: a non-blocking slide-in rail pinned to the right edge. It covers
    the board, not the setup panel — so drafts stay selectable while it's open. */

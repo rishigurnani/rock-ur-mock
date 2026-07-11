@@ -228,28 +228,23 @@ export function SetupPanel() {
             placeholder="Save current as…"
             value={sessName}
             onChange={(e) => setSessName(e.target.value)}
-            style={{ width: 120 }}
+            style={{ flex: 1 }}
           />
           <span>
-            <button
-              className="mini primary"
-              onClick={() => { store.saveSession(sessName.trim() || 'Untitled'); setSessName(''); }}
-            >
-              Save
-            </button>{' '}
+            <button className="mini primary" onClick={() => { store.saveSession(sessName.trim() || 'Untitled'); setSessName(''); }}>Save</button>{' '}
             <button className="mini" title="Restore a draft or a full backup file" onClick={() => importRef.current?.click()}>Import</button>
           </span>
         </div>
         {listSessions().length > 0 && (
           <div className="row">
-            <label className="truncate">{listSessions().length} saved · back up to a file</label>
-            <button className="mini primary" onClick={exportAll}>⤓ Backup all</button>
+            <label className="truncate">{listSessions().length} saved</label>
+            <button className="mini" onClick={exportAll}>⤓ Backup all</button>
           </div>
         )}
         {listSessions().map((sn) => {
           const open = sn.id === store.activeSessionId;
           return (
-          <div className={'row' + (open ? ' open-row' : '')} key={sn.id}>
+          <div className={'row draft-row' + (open ? ' open-row' : '')} key={sn.id}>
             <label className="truncate">
               <input
                 type="checkbox"
