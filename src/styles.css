@@ -89,10 +89,18 @@ select, input {
   animation: rail-in 0.18s ease-out;
 }
 @keyframes rail-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+/* Collapsed rail: a slim handle docked to the right edge, always in reach. */
+.rail-tab {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 50;
+  writing-mode: vertical-rl; padding: 16px 7px; cursor: pointer;
+  background: var(--panel); color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.5px;
+  border: 1px solid var(--border); border-right: none; border-radius: 8px 0 0 8px; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+}
+.rail-tab:hover { color: var(--text); background: var(--panel-2); }
 .rail h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 16px 0 6px; }
 /* Market table: aligned numeric columns (right-set) + truncating name. Explicit
    modifier so it doesn't ride on every .player-row that lands in the rail. */
-.mkt-row { grid-template-columns: 26px minmax(0, 1fr) 44px 34px 44px; }
+.player-row.mkt-row { grid-template-columns: 26px minmax(0, 1fr) 44px 34px 44px; }
 .mkt-row > .num { text-align: right; }
 .mkt-row > span:nth-child(2) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 

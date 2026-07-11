@@ -11,6 +11,7 @@ export function MockStats() {
   const store = useDraftStore();
   const compare = useCompare();
   const [q, setQ] = useState('');
+  const [min, setMin] = useState(false);
   const recs = listSessions().filter((sn) => compare.ids.includes(sn.id));
   const r = useMemo(
     () => mockStats(recs.map((s) => ({ name: s.name, ...s.snap }))),
@@ -25,11 +26,12 @@ export function MockStats() {
   const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = (tokens.length ? r.players.filter((s) => matchesQuery(s.player, tokens)) : r.players).slice(0, 40);
 
+  if (min) return <button className="rail-tab" title="Show Mock Stats" onClick={() => setMin(false)}>◂ Mock Stats · {n}</button>;
   return (
     <div className="rail panel">
       <div className="row">
         <h2 style={{ margin: 0 }}>Mock Stats · {n} drafts</h2>
-        <button className="mini" onClick={compare.clear}>✕</button>
+        <span><button className="mini" title="Minimize" onClick={() => setMin(true)}>–</button>{' '}<button className="mini" onClick={compare.clear}>✕</button></span>
       </div>
 
       <h3>Your team</h3>
