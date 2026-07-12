@@ -6,7 +6,7 @@
 // NAME so drafts run on different ranking pools still align.
 // ============================================================================
 
-import type { MatrixCell, Player } from '../types';
+import type { MatrixCell, Player, ResolvedPick } from '../types';
 import type { Snapshot } from '../store/sessions';
 import { cellKey, resolvePickOrder, keeperCandidates, CellKey } from './matrix';
 import { optimizeLineup } from './roster';
@@ -42,40 +42,48 @@ const std = (a: number[], m = mean(a)) => Math.sqrt(mean(a.map((x) => (x - m) **
 const pctl = (sorted: number[], p: number) =>
   sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
 
+type Agg = { player: Player; picks: number[]; yours: number; kept: number };
+
+/** IDs taken at a keeper cell this mock — reserved, never on the board, so kept
+ *  off the market: a pick is a keeper when its player is one of the cell's candidates. */
+function keptIds(order: ResolvedPick[], picks: string[]): Set<string> {
+  const kept = new Set<string>();
+  order.forEach((o, i) => { if (keeperCandidates(o).some((k) => k.playerId === picks[i])) kept.add(picks[i]); });
+  return kept;
+}
+
+/** Fold one mock into the running player aggregate + slot counts; returns this
+ *  mock's starting-lineup points for the outcome distribution. */
+function accumulate(m: MockInput, agg: Map<string, Agg>, slotCount: Map<number, number>): number {
+  if (m.humanSlot != null) slotCount.set(m.humanSlot, (slotCount.get(m.humanSlot) ?? 0) + 1);
+  const byId = new Map(m.players.map((p) => [p.id, p]));
+  const order = resolvePickOrder({
+    teamCount: m.config.teamCount, roundCount: m.config.roundCount, preset: m.config.preset,
+    defaultTimerSeconds: 0,
+    cells: new Map<CellKey, MatrixCell>(m.cells.map((c) => [cellKey(c.round, c.teamSlot), c])),
+  });
+  const kept = keptIds(order, m.picks);
+  const mine: Player[] = [];
+  m.picks.forEach((id, i) => {
+    const yours = m.humanSlot != null && order[i]?.owningTeamSlot === m.humanSlot;
+    const p = byId.get(id);
+    if (yours && p) mine.push(p); // your roster includes your keepers
+    if (!p) return;
+    const e = agg.get(p.name) ?? { player: p, picks: [], yours: 0, kept: 0 };
+    if (kept.has(id)) e.kept += 1; // keepers count, but stay off the board math
+    else { e.picks.push(i + 1); if (yours) e.yours += 1; }
+    agg.set(p.name, e);
+  });
+  return optimizeLineup(mine, m.config.rosterSlots).startingPoints;
+}
+
 export function mockStats(mocks: MockInput[]): MockReport {
-  const agg = new Map<string, { player: Player; picks: number[]; yours: number; kept: number }>();
+  const agg = new Map<string, Agg>();
   const slotCount = new Map<number, number>();
-  const starterPts: number[] = [];
-
-  for (const m of mocks) {
-    if (m.humanSlot != null) slotCount.set(m.humanSlot, (slotCount.get(m.humanSlot) ?? 0) + 1);
-    const byId = new Map(m.players.map((p) => [p.id, p]));
-    const order = resolvePickOrder({
-      teamCount: m.config.teamCount, roundCount: m.config.roundCount, preset: m.config.preset,
-      defaultTimerSeconds: 0,
-      cells: new Map<CellKey, MatrixCell>(m.cells.map((c) => [cellKey(c.round, c.teamSlot), c])),
-    });
-    // A pick is a KEEPER when the player taken there is one of that cell's keeper
-    // candidates — reserved, never on the draft board, so kept off the market.
-    const kept = new Set<string>();
-    order.forEach((o, i) => { if (keeperCandidates(o).some((k) => k.playerId === m.picks[i])) kept.add(m.picks[i]); });
-
-    const mine: Player[] = [];
-    m.picks.forEach((id, i) => {
-      const yours = m.humanSlot != null && order[i]?.owningTeamSlot === m.humanSlot;
-      const p = byId.get(id);
-      if (yours && p) mine.push(p); // your roster includes your keepers
-      if (!p) return;
-      const e = agg.get(p.name) ?? { player: p, picks: [], yours: 0, kept: 0 };
-      if (kept.has(id)) e.kept += 1; // keepers count, but stay off the board math
-      else { e.picks.push(i + 1); if (yours) e.yours += 1; }
-      agg.set(p.name, e);
-    });
-    starterPts.push(optimizeLineup(mine, m.config.rosterSlots).startingPoints);
-  }
+  const starterPts = mocks.map((m) => accumulate(m, agg, slotCount));
 
   const players = [...agg.values()]
-    .filter((e) => e.picks.length) // drafted at least once (pure keepers stay off the market)
+    .filter((e) => e.picks.length) // drafted at least once; pure keepers stay off the market
     .map(({ player, picks, yours, kept }) => ({ player, yours, kept, avgPick: mean(picks) }))
     .sort((a, b) => b.yours - a.yours || a.avgPick - b.avgPick);
 
