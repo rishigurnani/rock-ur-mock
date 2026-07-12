@@ -127,7 +127,7 @@ select, input {
 .cell.keeper { background: rgba(245, 158, 11, 0.12); }
 .cell.empty { color: var(--border); }
 
-.pos { display: inline-block; border-radius: 4px; padding: 0 4px; font-size: 10px; font-weight: 700; color: #0b0e14; }
+.pos { display: inline-block; border-radius: 4px; padding: 0 4px; font-size: 10px; font-weight: 700; color: #0b0e14; background: var(--muted); }
 .pos.QB { background: var(--qb); } .pos.RB { background: var(--rb); }
 .pos.WR { background: var(--wr); } .pos.TE { background: var(--te); }
 .pos.K  { background: var(--k);  } .pos.DST { background: var(--dst); }
