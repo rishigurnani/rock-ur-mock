@@ -105,7 +105,7 @@ export interface LeagueConfig {
  *  loud VARIANT here, not an optional field, so no code can read a pick without
  *  acknowledging keeper state — read it only via matrix's `keptPlayerId(pick)` /
  *  `keeperCandidates(pick)`, never by reaching into a `kind`. */
-interface PickBase {
+export interface PickBase {
   overall: number;
   round: number;
   teamSlot: number; // the board column this pick sits in

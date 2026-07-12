@@ -7,7 +7,7 @@
 // (assignedTeamSlot), keepers (candidate lists), and per-cell timers.
 // ============================================================================
 
-import type { KeeperOption, MatrixCell, MatrixPreset, Player, ResolvedPick } from '../types';
+import type { KeeperOption, MatrixCell, MatrixPreset, PickBase, Player, ResolvedPick } from '../types';
 
 export type CellKey = `${number}:${number}`;
 
@@ -153,6 +153,15 @@ function slotOrderForRound(
   return round % 2 === 0 ? ascending.slice().reverse() : ascending;
 }
 
+/** Build a pick's variant from its cell's candidate count: 0 → open draft, 1 →
+ *  locked keeper, 2+ → still contested (a pre-roll preview the roll hasn't
+ *  resolved). The one place a ResolvedPick variant is constructed. */
+function toPick(base: PickBase, keepers?: KeeperOption[]): ResolvedPick {
+  if (!keepers?.length) return { ...base, kind: 'draft' };
+  if (keepers.length === 1) return { ...base, kind: 'keeper', keeper: keepers[0] };
+  return { ...base, kind: 'contested', candidates: keepers };
+}
+
 /**
  * Resolve the full ordered pick list. Deterministic and pure.
  */
@@ -163,23 +172,14 @@ export function resolvePickOrder(opts: ResolveOptions): ResolvedPick[] {
   let overall = 0;
 
   for (let round = 1; round <= roundCount; round++) {
-    const order = slotOrderForRound(round, teamCount, preset);
-    for (const teamSlot of order) {
+    for (const teamSlot of slotOrderForRound(round, teamCount, preset)) {
       overall += 1;
       const cell = cells.get(cellKey(round, teamSlot));
-      const base = {
+      picks.push(toPick({
         overall, round, teamSlot,
         owningTeamSlot: cell?.assignedTeamSlot ?? teamSlot,
         timerSeconds: cell?.timerSeconds ?? defaultTimerSeconds,
-      };
-      const keepers = cell?.keepers;
-      // The cell's candidate count picks the variant: 0 → open, 1 → locked keeper,
-      // 2+ → still contested (a pre-roll preview cell the roll hasn't resolved).
-      picks.push(
-        !keepers?.length ? { ...base, kind: 'draft' }
-          : keepers.length === 1 ? { ...base, kind: 'keeper', keeper: keepers[0] }
-            : { ...base, kind: 'contested', candidates: keepers },
-      );
+      }, cell?.keepers));
     }
   }
 
