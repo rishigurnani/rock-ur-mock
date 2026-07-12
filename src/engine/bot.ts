@@ -127,10 +127,13 @@ function pickEnv(brain: Brain, ctx: SelectContext): PickEnv {
   // which reserved keepers would inflate — breaking the round-1/2 chaos cap).
   const currentPick = ctx.currentPick;
   const teams = ctx.config.teamCount;
+  // A team's final two DRAFTABLE picks (picksLeft already excludes keeper slots)
+  // lean 10x harder on roster need — the last real chances to patch a lineup hole.
+  const needBoost = (ctx.picksLeft ?? Infinity) <= 2 ? 10 : 1;
   // Baselines recomputed once per pick against the current pool, not per candidate.
   const baselines = computeBaselines(ctx.available, ctx.config);
   return {
-    w: { adp: brain.adpBias / 100, chaos: brain.chaos / 100, need: brain.rosterNeed / 100, age: brain.ageUpside / 100 },
+    w: { adp: brain.adpBias / 100, chaos: brain.chaos / 100, need: (brain.rosterNeed / 100) * needBoost, age: brain.ageUpside / 100 },
     baselines, positionalNeed: positionalNeed(ctx, baselines), caps: rosterMaxByMatch(ctx.modifiers),
     positionCounts: countByPosition(ctx.rosterPlayers), config: ctx.config,
     totalPlayerPool: ctx.totalPlayerPool, rosterStarters, slots,

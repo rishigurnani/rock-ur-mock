@@ -78,6 +78,13 @@ describe('need: redundancy penalty hits only pure bench depth', () => {
     // Slot already held by a stronger RB (260); a weaker RB (120) is depth → < 1.
     expect(needOf(oneRb(260, 120), 'cand')).toBeLessThan(1);
   });
+
+  it("leans harder on need in a team's last 2 picks (keeper-aware picksLeft)", () => {
+    // Lineup is full, so pressure is 0 — the 20% w.need boost is the only mover.
+    const last2 = needOf({ ...oneRb(120, 260), picksLeft: 2 }, 'cand');
+    const earlier = needOf({ ...oneRb(120, 260), picksLeft: 5 }, 'cand');
+    expect(last2).toBeGreaterThan(earlier);
+  });
 });
 
 describe('positionalNeed: starter-quality holes (A) + scarcity/VONA (B)', () => {
