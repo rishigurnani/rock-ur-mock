@@ -37,9 +37,13 @@ if (typeof localStorage !== 'undefined') {
 // single corrupted key can't silently wipe the log. (A full site-data clear takes
 // both; the Backup-all file is the real durable copy.)
 const BAK = SKEY + '~bak';
+/** Parse one stored log; null on a corrupt (unparseable) value, [] on a missing key. */
+function readLog(key: string): SessionRec[] | null {
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+  catch { return null; }
+}
 export function listSessions(): SessionRec[] {
-  try { return JSON.parse(localStorage.getItem(SKEY) || '[]'); }
-  catch { try { return JSON.parse(localStorage.getItem(BAK) || '[]'); } catch { return []; } }
+  return readLog(SKEY) ?? readLog(BAK) ?? [];
 }
 export const writeSessions = (l: SessionRec[]) => {
   const json = JSON.stringify(l);
