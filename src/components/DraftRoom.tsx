@@ -92,7 +92,8 @@ export function DraftRoom() {
       )}
       {started && !humanOnClock && !complete && (
         <div className="onclock-banner" style={{ borderColor: 'var(--warn)', background: 'rgba(245,158,11,0.12)' }}>
-          Bots are on the clock. Use <b>Step</b> or <b>Auto-run</b> above.
+          Paused{current ? ` at pick #${current.overall}` : ''} — inspect the board, then{' '}
+          <button className="mini" onClick={store.autoToHuman}>Resume ▶</button> (or press <b>Enter</b>), or <b>Step</b> one pick.
         </div>
       )}
 

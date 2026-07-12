@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type MouseEvent } from 'react';
 import { useDraftStore } from '../store/draftStore';
 import type { CompletedPick, Player } from '../types';
 import { resolvePickOrder, keptPlayerId, keeperCandidates } from '../engine/matrix';
@@ -40,6 +40,13 @@ export function PickMatrix() {
 
   const teamSlots = range1(config.teamCount);
   const rounds = range1(config.roundCount);
+
+  // Right-click a completed pick to rewind the live draft back to it. Guarded —
+  // it discards every pick made after this one (bots then re-run forward).
+  const rewind = (e: MouseEvent, overall: number) => {
+    e.preventDefault();
+    if (window.confirm(`Rewind the draft to pick #${overall}? Later picks are discarded.`)) store.rewindTo(overall);
+  };
 
   return (
     <div className="panel">
@@ -90,6 +97,7 @@ export function PickMatrix() {
                         (isKeeper ? ' keeper' : '')
                       }
                       title={done?.trace ? traceText(done, playerById) : undefined}
+                      onContextMenu={done ? (e) => rewind(e, pick.overall) : undefined}
                     >
                       {player ? (
                         <div className="pname">

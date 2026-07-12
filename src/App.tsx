@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useDraftStore } from './store/draftStore';
 import { SetupPanel } from './components/SetupPanel';
 import { PickMatrix } from './components/PickMatrix';
@@ -10,6 +11,19 @@ export function App() {
   const { engine, started } = store;
   const complete = engine?.isComplete ?? false;
   const humanOnClock = engine?.isHumanOnClock ?? false;
+
+  // Press Enter to resume when the draft is paused on the bots (e.g. after a
+  // rewind) — the keyboard twin of Auto-run. Ignored while typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.key !== 'Enter' || !started || complete || humanOnClock) return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      store.autoToHuman();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [started, complete, humanOnClock, store.autoToHuman]);
 
   return (
     <div className="app">

@@ -206,4 +206,23 @@ describe('Full draft simulation', () => {
     engine.runToCompletion();
     expect(engine.completed[0].playerId).toBe(humanPickId);
   });
+
+  it('rewinds to a pick: undoes later picks, restores the pool, keeps keepers reserved', () => {
+    const keeperId = POOL[0].id; // #1 player, kept for Team 5 at Round 3 (overall 25)
+    const cells = new Map([[cellKey(3, 5), { round: 3, teamSlot: 5, keepers: [{ playerId: keeperId, prob: 1 }] }]]);
+    const engine = engineOf({ cells, seed: 7 });
+    engine.runToCompletion();
+    const total = engine.completed.length;
+    const drafted = engine.completed.find((c) => c.overall === 20)!.playerId;
+
+    engine.rewindTo(20);
+    expect(engine.completed.length).toBe(19); // picks 1..19 kept
+    expect(engine.currentPick?.overall).toBe(20); // pick 20 back on the clock
+    expect(engine.availablePlayers().some((p) => p.id === drafted)).toBe(true); // undone player returns to the pool
+    expect(engine.availablePlayers().some((p) => p.id === keeperId)).toBe(false); // reserved keeper stays out
+
+    engine.runToCompletion();
+    expect(engine.completed.length).toBe(total); // re-runs to a full board
+    expect(engine.completed.filter((c) => c.playerId === keeperId)).toHaveLength(1); // keeper still kept exactly once
+  });
 });

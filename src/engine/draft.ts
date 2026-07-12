@@ -186,6 +186,18 @@ export class DraftEngine {
     return this.commit(pick, choice.player, choice.trace);
   }
 
+  /** Rewind so `overall` is back on the clock: undo every pick at or after it,
+   *  returning drafted players to the pool (reserved keepers stay reserved).
+   *  A no-op if nothing at/after `overall` has been committed. */
+  rewindTo(overall: number): void {
+    while (this.completed.length && this.completed[this.completed.length - 1].overall >= overall) {
+      const undone = this.completed.pop()!;
+      const player = this.byId.get(undone.playerId);
+      if (player && !keptPlayerId(this.order[undone.overall - 1])) this.available.set(player.id, player);
+    }
+    this.cursor = this.completed.length;
+  }
+
   /** Run every remaining pick that isn't gated on the human seat. */
   runToCompletion(): void {
     while (!this.isComplete) {

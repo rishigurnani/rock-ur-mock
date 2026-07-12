@@ -217,6 +217,7 @@ export interface DraftStore {
   step: () => void;
   autoToHuman: () => void;
   makePick: (playerId: string) => void;
+  rewindTo: (overall: number) => void;
 }
 
 // --- Imperative actions (engine mutation + session I/O) ---------------------
@@ -336,6 +337,9 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   autoToHuman: () => advance(get, set, (e) => e.runToCompletion()),
   // Let bots roll until the human is on the clock again after a manual pick.
   makePick: (playerId) => advance(get, set, (e) => { e.makePick(playerId); e.runToCompletion(); }),
+  // Rewind to an earlier pick and PAUSE there (bots do NOT auto-run) so the board
+  // can be inspected; Resume / Enter / Step roll forward again from that point.
+  rewindTo: (overall) => advance(get, set, (e) => e.rewindTo(overall)),
 }));
 
 // Warn before a tab close or reload would silently drop an unsaved draft — the
