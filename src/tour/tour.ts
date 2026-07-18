@@ -35,21 +35,14 @@ const setDemoKeeper = () => clickAnchor('keeper-save');
 const humanPicks = (seat: number) =>
   useDraftStore.getState().engine?.teamPlayerIds(seat).length ?? 0;
 
-// Auto-draft the whole board *including* the human seat. runToCompletion stops at
-// the human's pick, so loop: pick the top available for the human, let bots run to
-// the next human pick — this fills a real "your team" for Mock Stats.
+// Auto-draft the whole board *including* the human seat via Step — which picks the
+// seat on the clock with the sharp CPU brain for the human, one bot pick otherwise
+// — filling a real "your team" for Mock Stats.
 const autoDraftAll = () => {
   const s = useDraftStore.getState();
   for (let guard = 0; guard < 1000; guard++) {
-    const e = useDraftStore.getState().engine;
-    if (!e || e.isComplete) break;
-    if (e.isHumanOnClock) {
-      const pool = e.availablePlayers();
-      if (!pool.length) break;
-      s.makePick(pool[0].id);
-    } else {
-      s.autoToHuman();
-    }
+    if (useDraftStore.getState().engine?.isComplete ?? true) break;
+    s.step();
   }
 };
 

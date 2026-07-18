@@ -332,7 +332,8 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   importSession: (rec) => appendSession(rec, get, set),
   importAll: (recs) => { mergeSessions(recs); set((s) => ({ version: s.version + 1 })); },
   reset: () => resetBoard(get, set),
-  step: () => advance(get, set, (e) => { if (!e.isComplete) e.step(); }),
+  // On the human's clock, Step hands the pick to the CPU; otherwise one bot pick.
+  step: () => advance(get, set, (e) => { if (e.isComplete) return; e.isHumanOnClock ? e.autoPickHuman() : e.step(); }),
   autoToHuman: () => advance(get, set, (e) => e.runToCompletion()),
   // Let bots roll until the human is on the clock again after a manual pick.
   makePick: (playerId) => advance(get, set, (e) => { e.makePick(playerId); e.runToCompletion(); }),

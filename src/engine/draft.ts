@@ -18,7 +18,7 @@ import type {
 import { applyModifiers, EffectivePlayer } from './modifiers';
 import { resolvePickOrder, rollKeepers, keptPlayerId, draftHorizon, CellKey } from './matrix';
 import type { MatrixCell } from '../types';
-import { selectPick, Rng } from './bot';
+import { selectPick, PRESETS, Rng } from './bot';
 import { RosterState } from './roster';
 
 export interface DraftSetup {
@@ -162,6 +162,14 @@ export class DraftEngine {
     const team = this.teamsBySlot.get(pick.owningTeamSlot);
     if (!team) throw new Error(`No team at slot ${pick.owningTeamSlot}`);
     return this.botPick(pick, team);
+  }
+
+  /** Hand the human's own pick to the CPU, using the sharp bot brain. */
+  autoPickHuman(): CompletedPick | null {
+    const pick = this.currentPick;
+    if (!pick || !this.isHumanOnClock) return null;
+    const team = this.teamsBySlot.get(pick.owningTeamSlot)!;
+    return this.botPick(pick, { ...team, brain: PRESETS.sharp });
   }
 
   /** Score the bot's options for `pick` and commit its choice. */

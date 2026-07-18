@@ -42,7 +42,7 @@ export function App() {
             </button>
           ) : (
             <>
-              <button onClick={store.step} disabled={complete || humanOnClock}>
+              <button onClick={store.step} disabled={complete}>
                 Step
               </button>
               <button onClick={store.autoToHuman} disabled={complete || humanOnClock}>
