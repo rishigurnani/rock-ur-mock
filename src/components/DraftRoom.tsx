@@ -32,6 +32,17 @@ export function DraftRoom() {
   // engine, so a mid-draft team selection sticks.
   useEffect(() => setRosterSlot(store.humanSlot ?? 1), [engine, store.humanSlot]);
 
+  // Starting the draft invalidates pre-draft pool tinkering — a selected or
+  // searched-for player may now be a keeper or otherwise off the board. Clear the
+  // selection, search, and position filter so the pool opens clean on your pick.
+  useEffect(() => {
+    if (started) {
+      setSelectedId(null);
+      setQuery('');
+      setFilter('ALL');
+    }
+  }, [started]);
+
   const playerById = useMemo(() => indexById(players), [players]);
 
   // Available = engine pool once started; pre-draft shows the full list (kept
