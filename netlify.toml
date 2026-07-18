@@ -1,0 +1,39 @@
+# --- 1. BUILD SETTINGS ---
+[build]
+  # Where your compiled production assets are placed. 
+  # (Vite defaults to "dist", Create React App defaults to "build")
+  publish = "dist"
+  
+  # The command Netlify runs to compile your TypeScript codebase
+  command = "npm run build"
+
+# --- 2. CLIENT-SIDE ROUTING REWRITES (The SPA Fix) ---
+# If your app uses client-side routing (like React Router), refreshing on a page 
+# like /mock-draft will cause a Netlify 404. This rule forces Netlify to pass 
+# control to your index.html while maintaining "file shadowing" (real assets bypass this).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# --- 3. EDGE CDN CACHING OPTIMIZATION ---
+# Modern bundlers add unique hashes to your compiled asset files (e.g., main-a1b2c3.js).
+# Because these file names change every time you deploy new code, we can instruct the browser
+# and Netlify's global network to cache them permanently.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# --- 4. PREVENT STALE DEPLOYS FOR CORE FILES ---
+# Your index.html, service workers, or site manifests should NEVER be aggressively cached.
+# If they are, users will continue loading your old JavaScript bundles instead of your new deploys.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
