@@ -54,7 +54,7 @@ Then open http://localhost:5173 in your browser and you're ready to draft.
 
 Launch the app and click "Tour" OR watch the walkthrough below:
 
-<video src="https://github.com/rishigurnani/rock-ur-mock/raw/main/docs/tour-demo.mp4" controls muted width="800">
+<video src="https://cdn.jsdelivr.net/gh/rishigurnani/rock-ur-mock@main/docs/tour-demo.mp4" controls muted width="800">
   <a href="https://github.com/rishigurnani/rock-ur-mock/raw/main/docs/tour-demo.mp4">Watch the guided tour walkthrough</a>
 </video>
 
