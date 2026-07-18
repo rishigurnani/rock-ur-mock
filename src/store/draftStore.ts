@@ -28,7 +28,6 @@ import { mulberry32 } from '../lib/util';
 import { listSessions, writeSessions, mergeSessions, hydratePlayers, SNAPSHOT_SCHEMA, type Snapshot, type SessionRec } from './sessions';
 
 function defaultTeams(count: number, humanSlot: number | null): Team[] {
-  const presetKeys = Object.keys(PRESETS);
   return Array.from({ length: count }, (_, i) => {
     const slot = i + 1;
     return {
@@ -36,7 +35,7 @@ function defaultTeams(count: number, humanSlot: number | null): Team[] {
       slot,
       name: slot === humanSlot ? 'You' : `Bot ${slot}`,
       isBot: slot !== humanSlot,
-      brain: { ...PRESETS[presetKeys[i % presetKeys.length]] },
+      brain: { ...PRESETS.sharp },
     };
   });
 }

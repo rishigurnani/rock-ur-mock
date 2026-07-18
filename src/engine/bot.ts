@@ -203,8 +203,8 @@ export function selectPick(brain: Brain, ctx: SelectContext): ScoredCandidate | 
 
 export const PRESETS: Record<string, Brain> = {
   balanced:      { adpBias: 50, chaos: 20, rosterNeed: 40, ageUpside: 50 },
-  // Sharp: pure value (100% VBD), light variance, real roster discipline.
-  sharp:         { adpBias:  0, chaos: 10, rosterNeed: 50, ageUpside: 40 },
+  // Sharp: even VBD/ADP blend, moderate variance, a light roster nudge, value-only (no age).
+  sharp:         { adpBias: 50, chaos: 50, rosterNeed: 25, ageUpside:  0 },
   // Follows the crowd, low variance.
   sharkADP:      { adpBias: 90, chaos:  5, rosterNeed: 30, ageUpside: 40 },
   // Pure value hunter.
