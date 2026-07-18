@@ -3,6 +3,7 @@ import { useDraftStore } from '../store/draftStore';
 import type { CompletedPick, Player } from '../types';
 import { resolvePickOrder, keptPlayerId, keeperCandidates } from '../engine/matrix';
 import { indexById, range1 } from '../lib/util';
+import { tourAnchor } from '../tour/tour-types';
 
 export function PickMatrix() {
   // Subscribe to the whole store; `version` bumps re-render after engine mutations.
@@ -61,7 +62,8 @@ export function PickMatrix() {
                   Team {s}
                   {/* Pre-draft: nudge a team's seat to switch draft position. */}
                   {!engine && (
-                    <span className="seat-swap">
+                    // Team 1 holds the guided tour's demo keeper — tag its arrows.
+                    <span className="seat-swap" {...(s === 1 ? tourAnchor('seat-swap') : {})}>
                       <button className="mini" disabled={s === 1} onClick={() => store.swapSlots(s, s - 1)} title="Move earlier">◀</button>
                       <button className="mini" disabled={s === config.teamCount} onClick={() => store.swapSlots(s, s + 1)} title="Move later">▶</button>
                     </span>

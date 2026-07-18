@@ -3,6 +3,7 @@ import { useDraftStore } from '../store/draftStore';
 import { optimizeLineup, byeClashes, type LineupSeat } from '../engine/roster';
 import { indexById, range1, playerMeta, matchesQuery } from '../lib/util';
 import type { Player, Position } from '../types';
+import { tourAnchor } from '../tour/tour-types';
 
 const POSITIONS: (Position | 'ALL')[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
 
@@ -135,6 +136,7 @@ export function DraftRoom() {
       )}
 
       <input
+        {...tourAnchor('player-search')}
         placeholder="Search name, position, team, bye (bye9), tag…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
@@ -167,7 +169,7 @@ export function DraftRoom() {
         />
       )}
 
-      <div className="pool">
+      <div className="pool" {...tourAnchor('draft-pick')}>
         {shown.map((p) => (
           <div
             className={'player-row' + (p.id === selectedId ? ' selected' : '')}
@@ -195,7 +197,7 @@ export function DraftRoom() {
                 Draft
               </button>
             ) : (
-              <button className="mini">{p.id === selectedId ? 'Editing' : 'Edit'}</button>
+              <button className="mini" {...tourAnchor('player-edit')}>{p.id === selectedId ? 'Editing' : 'Edit'}</button>
             )}
           </div>
         ))}
@@ -280,17 +282,18 @@ function PlayerInspector({
           <div className="row" style={{ marginTop: 10 }}>
             <label>Keeper</label>
             <span>
-              <select value={team} onChange={(e) => setTeam(Number(e.target.value))}>
+              <select {...tourAnchor('keeper-team')} value={team} onChange={(e) => setTeam(Number(e.target.value))}>
                 {range1(teamCount).map((t) => (
                   <option key={t} value={t}>T{t}</option>
                 ))}
               </select>{' '}
-              <select value={round} onChange={(e) => setRound(Number(e.target.value))}>
+              <select {...tourAnchor('keeper-round')} value={round} onChange={(e) => setRound(Number(e.target.value))}>
                 {range1(roundCount).map((r) => (
                   <option key={r} value={r}>R{r}</option>
                 ))}
               </select>{' '}
               <input
+                {...tourAnchor('keeper-pct')}
                 type="number"
                 min={1}
                 max={100}
@@ -302,6 +305,7 @@ function PlayerInspector({
             </span>
           </div>
           <button
+            {...tourAnchor('keeper-save')}
             className="mini primary"
             style={{ width: '100%', marginTop: 6 }}
             onClick={() => store.setKeeper(round, team, player.id, keepPct / 100)}

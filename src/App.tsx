@@ -5,6 +5,8 @@ import { PickMatrix } from './components/PickMatrix';
 import { DraftRoom } from './components/DraftRoom';
 import { MockStats } from './components/MockStats';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { launchTour } from './tour/tour';
+import { tourAnchor } from './tour/tour-types';
 
 export function App() {
   const store = useDraftStore();
@@ -28,13 +30,14 @@ export function App() {
   return (
     <div className="app">
       <div className="topbar">
-        <div>
+        <div {...tourAnchor('welcome')}>
           <h1>🏈 Rock Ur Mock</h1>
           <div className="sub">Elegant, algorithm-driven mock draft simulator</div>
         </div>
         <div className="controls">
+          <button className="mini tour-btn" onClick={launchTour} title="Guided walkthrough">🧭 Tour</button>
           {!started ? (
-            <button className="primary" onClick={store.start}>
+            <button className="primary" {...tourAnchor('start-draft')} onClick={store.start}>
               Start Draft
             </button>
           ) : (

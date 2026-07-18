@@ -1,0 +1,10 @@
+#!/bin/sh
+# Fast guard against tour-anchor drift: a renamed/typo'd TourElementId, a stale
+# `[data-tour="…"]` selector, or a dropped anchor all fail the type check. No web
+# server, no DB — just the compiler in no-emit mode.
+echo "Checking for UI Guide code drift…"
+if ! npm run --silent typecheck; then
+  echo "❌ COMMIT BLOCKED: a tour identifier is broken or mismatched."
+  exit 1
+fi
+echo "✅ UI Guides match codebase perfectly."

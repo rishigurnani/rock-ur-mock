@@ -89,6 +89,24 @@ select, input {
   animation: rail-in 0.18s ease-out;
 }
 @keyframes rail-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+/* Tour button: a few golden sparkle pulses on load/refresh to invite discovery,
+   then it settles into a plain button. */
+.tour-btn { position: relative; animation: tour-glow 1.4s ease-in-out 3; }
+.tour-btn::after {
+  content: '';
+  position: absolute; top: -7px; right: -5px; font-size: 11px;
+  pointer-events: none;
+  animation: tour-twinkle 1.4s ease-in-out 3;
+}
+@keyframes tour-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(250, 204, 21, 0.6); }
+}
+@keyframes tour-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.5) rotate(-15deg); }
+  50% { opacity: 1; transform: scale(1) rotate(12deg); }
+}
 /* Collapsed rail: a slim handle docked to the right edge, always in reach. */
 .rail-tab {
   position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 50;

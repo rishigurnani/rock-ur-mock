@@ -52,16 +52,7 @@ Then open http://localhost:5173 in your browser and you're ready to draft.
 
 ## Quickstart
 
-1. **Set up the league** — pick the number of teams, rounds, roster slots, and
-   scoring format.
-2. **Tune the bots** — drag the four sliders on each team to shape how they draft.
-3. **Draft** — take your own team's picks, or hit run and watch the whole thing
-   simulate. Hover any completed pick to see why the bot chose that player.
-4. **Compare setups** — save a few mocks, then check two or more in the Drafts
-   panel to open the Mock Stats rail and see which slot or strategy drafts better.
-
-Want an injury what-if? Zero out a player's projected points and re-run to see
-how the board shifts.
+Launch the app and click "Tour".
 
 ## Features
 

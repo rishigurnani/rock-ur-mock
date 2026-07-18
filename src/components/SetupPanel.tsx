@@ -7,6 +7,7 @@ import { BrainSliders } from './BrainSliders';
 import { range1 } from '../lib/util';
 import { useRef, useState, type ChangeEvent } from 'react';
 import type { RosterSlot } from '../types';
+import { tourAnchor } from '../tour/tour-types';
 
 // Roster spots <-> one compact text field, e.g. "QB1 RB2 WR2 TE1 FLEX1 BENCH6".
 const rosterToText = (r: Partial<Record<RosterSlot, number>>) =>
@@ -172,6 +173,7 @@ export function SetupPanel() {
         <div className="row">
           <label>Your seat</label>
           <select
+            {...tourAnchor('human-slot')}
             value={humanSlot ?? 'none'}
             onChange={(e) =>
               store.setHumanSlot(e.target.value === 'none' ? null : Number(e.target.value))
@@ -221,9 +223,9 @@ export function SetupPanel() {
         )}
       </div>
 
-      <div className="panel">
+      <div className="panel" {...tourAnchor('compare-slots')}>
         <h2>Drafts</h2>
-        <div className="row">
+        <div className="row" {...tourAnchor('save-mock')}>
           <input
             placeholder="Save current as…"
             value={sessName}

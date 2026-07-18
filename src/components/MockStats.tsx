@@ -4,6 +4,7 @@ import { listSessions } from '../store/sessions';
 import { useCompare } from '../store/compare';
 import { mockStats } from '../engine/mockStats';
 import { playerMeta, matchesQuery } from '../lib/util';
+import { tourAnchor } from '../tour/tour-types';
 
 /** Cross-mock analytics as a non-blocking slide-in rail: opens at 2+ selected
  *  drafts and updates live as you tick more (the setup panel stays interactive). */
@@ -28,7 +29,7 @@ export function MockStats() {
 
   if (min) return <button className="rail-tab" title="Show Mock Stats" onClick={() => setMin(false)}>◂ Mock Stats · {n}</button>;
   return (
-    <div className="rail panel">
+    <div className="rail panel" {...tourAnchor('mock-stats')}>
       <div className="row">
         <h2 style={{ margin: 0 }}>Mock Stats · {n} drafts</h2>
         <span><button className="mini" title="Minimize" onClick={() => setMin(true)}>–</button>{' '}<button className="mini" onClick={compare.clear}>✕</button></span>
