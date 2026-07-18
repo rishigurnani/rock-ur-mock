@@ -51,8 +51,11 @@ npm run dev       # http://localhost:5173
 Then open http://localhost:5173 in your browser and you're ready to draft.
 
 ## Quickstart
+Get started in one of three ways.
 
-Launch the app and click "Tour" OR watch the walkthrough below:
+1) Launch the app locally and click "Tour"
+2) Visit the web application, hosted at https://rock-ur-mock.netlify.app/
+3) Watch the walkthrough below:
 
 <video src="https://github.com/user-attachments/assets/214fc4b2-7b83-4bdd-b1c7-e14b46f15f58" controls muted width="800">
   <a href="https://github.com/rishigurnani/rock-ur-mock/raw/main/docs/tour-demo.mp4">Watch the guided tour walkthrough</a>
