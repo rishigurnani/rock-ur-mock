@@ -336,7 +336,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   step: () => advance(get, set, (e) => { if (e.isComplete) return; e.isHumanOnClock ? e.autoPickHuman() : e.step(); }),
   autoToHuman: () => advance(get, set, (e) => e.runToCompletion()),
   // Let bots roll until the human is on the clock again after a manual pick.
-  makePick: (playerId) => advance(get, set, (e) => { e.makePick(playerId); e.runToCompletion(); }),
+  makePick: (playerId) => advance(get, set, (e) => { e.makePick(playerId); if (!e.heist(get().config.heistChance ?? 0)) e.runToCompletion(); }),
   // Rewind to an earlier pick and PAUSE there (bots do NOT auto-run) so the board
   // can be inspected; Resume / Enter / Step roll forward again from that point.
   rewindTo: (overall) => advance(get, set, (e) => e.rewindTo(overall)),

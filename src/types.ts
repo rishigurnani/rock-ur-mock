@@ -97,6 +97,7 @@ export interface LeagueConfig {
   rosterSlots: Partial<Record<RosterSlot, number>>;
   /** Max keepers kept per team each run. Absent = no limit; 0 = exactly none. */
   keeperCount?: number;
+  heistChance?: number; // 0–1: odds the time machine hands a player you draft to a rival bot
 }
 
 // ---- Draft runtime ---------------------------------------------------------
@@ -137,4 +138,5 @@ export interface CompletedPick {
   teamSlot: number;
   playerId: string;
   trace?: ScoreTrace;
+  topIds?: string[]; // a bot pick's top-15 candidate ids — the time machine's scoop check
 }

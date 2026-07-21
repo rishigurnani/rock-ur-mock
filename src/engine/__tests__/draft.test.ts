@@ -226,3 +226,45 @@ describe('Full draft simulation', () => {
     expect(engine.completed.filter((c) => c.playerId === keeperId)).toHaveLength(1); // keeper still kept exactly once
   });
 });
+
+describe('Time machine (heist)', () => {
+  it('rewinds a heisted pick to the LATEST bot that had the player in its top 15', () => {
+    const e = engineOf({ humanSlot: 3, seed: 1 });
+    e.runToCompletion(); // stops on your first pick (#3); bots took #1, #2
+    expect(e.isHumanOnClock).toBe(true);
+    const bot2 = e.completed[1];
+    const taken = new Set(e.completed.map((c) => c.playerId));
+    const p = bot2.topIds!.find((id) => !taken.has(id))!; // in the later bot's (#2) top 15, still free
+    e.makePick(p); // you draft p
+    expect(e.heist(1)).toBe(true);
+    expect(e.completed[1].playerId).toBe(p); // handed to the LATEST qualifying bot (pick #2, not #1)
+    expect(e.isHumanOnClock).toBe(true); // your clock again — p is gone
+    expect(e.availablePlayers().some((x) => x.id === p)).toBe(false);
+    expect(e.lastHeist).toEqual({ playerId: p, teamSlot: bot2.teamSlot }); // recorded for the notice
+  });
+
+  it('heisting the same pick twice keeps both players placed', () => {
+    const e = engineOf({ humanSlot: 5, seed: 1 });
+    e.runToCompletion(); // stops on your first pick (#5); bots took #1–#4
+    const taken = new Set(e.completed.map((c) => c.playerId));
+    const a = e.completed[3].topIds!.find((id) => !taken.has(id))!; // in bot #4's top 15
+    const b = e.completed[2].topIds!.find((id) => !taken.has(id) && id !== a)!; // in bot #3's top 15
+    e.makePick(a);
+    expect(e.heist(1)).toBe(true); // A is heisted
+    e.makePick(b);
+    expect(e.heist(1)).toBe(true); // B is heisted on the same pick
+    expect(e.availablePlayers().some((x) => x.id === a)).toBe(false); // A still has a home (the bug)
+    expect(e.availablePlayers().some((x) => x.id === b)).toBe(false); // and so does B
+    expect(e.isHumanOnClock).toBe(true);
+  });
+
+  it('odds 0 never heists; the pick stands', () => {
+    const e = engineOf({ humanSlot: 3, seed: 1 });
+    e.runToCompletion();
+    const p = e.availablePlayers()[0].id;
+    e.makePick(p);
+    expect(e.heist(0)).toBe(false);
+    expect(e.completed.at(-1)!.playerId).toBe(p);
+    expect(e.lastHeist).toBeNull(); // no heist → nothing to notify
+  });
+});

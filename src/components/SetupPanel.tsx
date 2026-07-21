@@ -186,6 +186,12 @@ export function SetupPanel() {
             ))}
           </select>
         </div>
+        <div className="row">
+          <label>Heist odds (0–1)</label>
+          <input type="number" min={0} max={1} step={0.1} value={config.heistChance ?? 0}
+            onChange={(e) => store.setConfig({ heistChance: Number(e.target.value) })}
+            style={{ width: 64 }} title="Time machine: odds a player you draft is rewound and handed to a bot who'd have taken him" />
+        </div>
       </div>
 
       <div className="panel">

@@ -195,12 +195,6 @@ function scoreOne(player: EffectivePlayer, env: PickEnv): ScoredCandidate {
   };
 }
 
-/** Pick the single best candidate for a bot. Returns null if none are legal. */
-export function selectPick(brain: Brain, ctx: SelectContext): ScoredCandidate | null {
-  const scored = scoreCandidates(brain, ctx);
-  return scored[0] ?? null;
-}
-
 export const PRESETS: Record<string, Brain> = {
   balanced:      { adpBias: 50, chaos: 20, rosterNeed: 40, ageUpside: 50 },
   // Sharp: even VBD/ADP blend, moderate variance, a light roster nudge, value-only (no age).

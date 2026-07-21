@@ -1,7 +1,7 @@
 // ============================================================================
 // Draft engine — the orchestrator.
 // ----------------------------------------------------------------------------
-// Holds live draft state and advances pick-by-pick. Bots pick via selectPick;
+// Holds live draft state and advances pick-by-pick. Bots pick via scoreCandidates;
 // a human seat picks via makePick(). Keeper cells auto-lock their player.
 // Pure-ish: all randomness flows through an injectable RNG.
 // ============================================================================
@@ -18,7 +18,7 @@ import type {
 import { applyModifiers, EffectivePlayer } from './modifiers';
 import { resolvePickOrder, rollKeepers, keptPlayerId, draftHorizon, CellKey } from './matrix';
 import type { MatrixCell } from '../types';
-import { selectPick, PRESETS, Rng } from './bot';
+import { scoreCandidates, PRESETS, Rng } from './bot';
 import { RosterState } from './roster';
 
 export interface DraftSetup {
@@ -50,6 +50,8 @@ export class DraftEngine {
 
   cursor = 0;
   readonly completed: CompletedPick[] = [];
+  lastHeist: { playerId: string; teamSlot: number } | null = null; // set by heist(), for the UI notice
+  private readonly forced = new Map<number, string>(); // heisted players pinned to a pick, re-applied on any rewind
 
   constructor(setup: DraftSetup) {
     this.config = setup.config;
@@ -157,6 +159,8 @@ export class DraftEngine {
       // Keeper id not in dataset (e.g. stale) — fall through to auto-pick.
     }
 
+    const forced = this.forced.get(pick.overall);
+    if (forced && this.available.has(forced)) return this.commit(pick, this.available.get(forced)!, undefined);
     if (pick.owningTeamSlot === this.humanSlot) return null;
 
     const team = this.teamsBySlot.get(pick.owningTeamSlot);
@@ -179,7 +183,7 @@ export class DraftEngine {
     const rosterPlayers = this.teamPlayerIds(pick.owningTeamSlot)
       .map((id) => this.byId.get(id))
       .filter((p): p is EffectivePlayer => !!p);
-    const choice = selectPick(team.brain, {
+    const scored = scoreCandidates(team.brain, {
       available: this.availablePlayers(),
       rosterPlayers,
       config: this.config,
@@ -190,8 +194,27 @@ export class DraftEngine {
       picksUntilNext: untilNext,
       rng: this.rng,
     });
+    const choice = scored[0];
     if (!choice) throw new Error('No legal pick available');
-    return this.commit(pick, choice.player, choice.trace);
+    return Object.assign(this.commit(pick, choice.player, choice.trace), { topIds: scored.slice(0, 15).map((c) => c.player.id) });
+  }
+
+  // Time machine (odds `chance`): rewind, giving the player you drafted to the LATEST bot since your last turn with him in its top 15, so you pick again. True if heisted.
+  heist(chance: number): boolean {
+    this.lastHeist = null;
+    const mine = this.completed.at(-1);
+    if (!mine || mine.teamSlot !== this.humanSlot || this.rng() >= chance) return false;
+    let hit: CompletedPick | null = null;
+    for (const c of this.completed) {
+      if (c.overall >= mine.overall) break;
+      if (c.teamSlot === this.humanSlot) hit = null;
+      else if (c.topIds?.includes(mine.playerId)) hit = c; // keep the LATEST qualifying pick
+    }
+    if (!hit) return false;
+    this.lastHeist = { playerId: mine.playerId, teamSlot: hit.teamSlot };
+    this.forced.set(hit.overall, mine.playerId); // pin it so a later heist's rewind re-applies it
+    this.rewindTo(hit.overall); this.runToCompletion();
+    return true;
   }
 
   /** Rewind so `overall` is back on the clock: undo every pick at or after it,
