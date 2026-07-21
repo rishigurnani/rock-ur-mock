@@ -254,6 +254,12 @@ describe('backup resilience — merge + corruption fallback', () => {
     expect(listSessions().map((s) => s.name)).toEqual(['A']); // recovered from ~bak
   });
 
+  it('falls back to the mirror when the primary key is missing (lost, not emptied)', () => {
+    mergeSessions([rec('1', 'A')]);
+    delete store['rockurmock.sessions']; // key gone entirely; mirror survives
+    expect(listSessions().map((s) => s.name)).toEqual(['A']); // recovered from ~bak
+  });
+
   it('respects a legitimately empty log (no zombie drafts)', () => {
     store['rockurmock.sessions'] = '[]';
     expect(listSessions()).toEqual([]);

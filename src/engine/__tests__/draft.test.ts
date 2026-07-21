@@ -168,8 +168,8 @@ describe('Full draft simulation', () => {
     expect(replay(mk, ids)).toEqual(ids);
   });
 
-  it('the sharp preset is 100% VBD, 10% chaos, 50% roster need', () => {
-    expect(PRESETS.sharp).toEqual({ adpBias: 0, chaos: 10, rosterNeed: 50, ageUpside: 40 });
+  it('the sharp preset is an even VBD/ADP blend, moderate chaos, light roster nudge, no age', () => {
+    expect(PRESETS.sharp).toEqual({ adpBias: 50, chaos: 50, rosterNeed: 25, ageUpside: 0 });
   });
 
   it('different seeds produce different drafts (bots are stochastic)', () => {

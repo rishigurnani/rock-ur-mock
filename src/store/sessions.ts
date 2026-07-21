@@ -32,15 +32,22 @@ if (typeof localStorage !== 'undefined') {
     if (legacy) localStorage.removeItem('sleeperg.sessions');
   } catch { /* ignore */ }
 }
-// Every write is mirrored to a shadow key; a read falls back to it ONLY when the
-// primary is unparseable (corruption), never when it's a legit empty list — so a
-// single corrupted key can't silently wipe the log. (A full site-data clear takes
-// both; the Backup-all file is the real durable copy.)
+// A deployed origin's localStorage is "best-effort": the browser may evict it
+// between visits under storage pressure (localhost is exempt, which is why saves
+// survive in dev but vanish on the live site). Ask to mark it persistent so saved
+// drafts aren't reclaimed. Fire-and-forget; unsupported browsers just skip it.
+if (typeof navigator !== 'undefined') void navigator.storage?.persist?.();
+// Every write is mirrored to a shadow key; a read falls back to it when the primary
+// is unparseable (corruption) OR missing (a lost/evicted key), never when it's a
+// legit empty list '[]' — so losing one key can't silently wipe the log while the
+// mirror survives. (A full site-data clear takes both; Backup-all is the durable copy.)
 const BAK = SKEY + '~bak';
-/** Parse one stored log; null on a corrupt (unparseable) value, [] on a missing key. */
+/** Parse one stored log; null when the key is MISSING (lost/evicted) or corrupt so
+ *  the caller tries the mirror, [] only for a stored (legit) empty list. */
 function readLog(key: string): SessionRec[] | null {
-  try { return JSON.parse(localStorage.getItem(key) || '[]'); }
-  catch { return null; }
+  const raw = localStorage.getItem(key);
+  if (raw == null) return null;
+  try { return JSON.parse(raw); } catch { return null; }
 }
 export function listSessions(): SessionRec[] {
   return readLog(SKEY) ?? readLog(BAK) ?? [];
