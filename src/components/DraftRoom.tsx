@@ -97,8 +97,9 @@ export function DraftRoom() {
       </h2>
 
       {started && humanOnClock && current && (
-        <div className="onclock-banner" style={engine?.lastHeist ? { borderColor: 'var(--warn)', background: 'rgba(245,158,11,0.12)' } : undefined}>
-          {engine?.lastHeist && <>🕵️ <strong>Heist!</strong> {playerById.get(engine.lastHeist.playerId)?.name} scooped by Team {engine.lastHeist.teamSlot}. </>}<strong>You're on the clock</strong> — Round {current.round}, Pick #{current.overall}. Pick a player below.
+        <div key={`${current.overall}:${engine?.lastHeist?.playerId ?? ''}`} className="toast">
+          {engine?.lastHeist && <>🕵️ <strong>Heist!</strong> {playerById.get(engine.lastHeist.playerId)?.name} scooped by Team {engine.lastHeist.teamSlot}. </>}
+          <strong>You're on the clock</strong> — Round {current.round}, Pick #{current.overall}. Pick a player below.
         </div>
       )}
       {started && !humanOnClock && !complete && (

@@ -90,6 +90,13 @@ select, input {
 }
 @keyframes rail-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
+/* Heist toast: a fixed top-right notice that fades out on its own (a changing React key replays it per heist). */
+.toast {
+  position: fixed; top: 16px; right: 16px; z-index: 100; max-width: 320px; padding: 10px 14px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--warn); box-shadow: -6px 8px 24px rgba(0, 0, 0, 0.4); animation: toast-fade 5s ease forwards;
+}
+@keyframes toast-fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+
 /* Tour button: a few golden sparkle pulses on load/refresh to invite discovery,
    then it settles into a plain button. */
 .tour-btn { position: relative; animation: tour-glow 1.4s ease-in-out 3; }
