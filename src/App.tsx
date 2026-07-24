@@ -65,6 +65,11 @@ export function App() {
         </ErrorBoundary>
       </div>
       <ErrorBoundary><MockStats /></ErrorBoundary>
+      <footer className="footer">
+        <a href="https://github.com/rishigurnani/rock-ur-mock" target="_blank" rel="noreferrer" title="View source on GitHub">
+          <i className="fa-brands fa-github" aria-label="GitHub"></i>
+        </a>
+      </footer>
     </div>
   );
 }
