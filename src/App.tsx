@@ -18,10 +18,10 @@ export function App() {
   // rewind) — the keyboard twin of Auto-run. Ignored while typing in a field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
       const t = e.target as HTMLElement;
-      if (e.key !== 'Enter' || !started || complete || humanOnClock) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
-      store.autoToHuman();
+      if (started && !complete && !humanOnClock) store.autoToHuman();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -24,14 +24,20 @@ export interface SessionRec { id: string; name: string; savedAt: number; status:
 
 const SKEY = 'rockurmock.sessions';
 // One-time migration: carry saved drafts over from the old "sleeperg" key so
-// nothing is lost on the rename. Guarded for non-browser (test) environments.
-if (typeof localStorage !== 'undefined') {
+// nothing is lost on the rename. Returns whether the key was reconciled; a throw
+// means storage is blocked (private mode / disabled) — a safe skip, not a crash.
+function migrateLegacyKey(): boolean {
   try {
     const legacy = localStorage.getItem('sleeperg.sessions');
     if (legacy && !localStorage.getItem(SKEY)) localStorage.setItem(SKEY, legacy);
     if (legacy) localStorage.removeItem('sleeperg.sessions');
-  } catch { /* ignore */ }
+    return true;
+  } catch {
+    return false; // storage unavailable — nothing migrated, app runs on the primary key
+  }
 }
+// Guarded for non-browser (test) environments.
+if (typeof localStorage !== 'undefined') migrateLegacyKey();
 // A deployed origin's localStorage is "best-effort": the browser may evict it
 // between visits under storage pressure (localhost is exempt, which is why saves
 // survive in dev but vanish on the live site). Ask to mark it persistent so saved

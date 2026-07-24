@@ -204,17 +204,20 @@ export class DraftEngine {
     this.lastHeist = null;
     const mine = this.completed.at(-1);
     if (!mine || mine.teamSlot !== this.humanSlot || this.rng() >= chance) return false;
-    let hit: CompletedPick | null = null;
-    for (const c of this.completed) {
-      if (c.overall >= mine.overall) break;
-      if (c.teamSlot === this.humanSlot) hit = null;
-      else if (c.topIds?.includes(mine.playerId)) hit = c; // keep the LATEST qualifying pick
-    }
+    const hit = this.findHeistVictim(mine);
     if (!hit) return false;
     this.lastHeist = { playerId: mine.playerId, teamSlot: hit.teamSlot };
     this.forced.set(hit.overall, mine.playerId); // pin it so a later heist's rewind re-applies it
     this.rewindTo(hit.overall); this.runToCompletion();
     return true;
+  }
+
+  /** The LATEST bot pick since your last turn whose top-15 board held `mine`'s
+   *  player — the seat the heist steals him back from (null if none qualifies). */
+  private findHeistVictim(mine: CompletedPick): CompletedPick | null {
+    const priors = this.completed.filter((c) => c.overall < mine.overall);
+    const sinceMyTurn = priors.slice(priors.map((c) => c.teamSlot).lastIndexOf(this.humanSlot ?? -1) + 1);
+    return sinceMyTurn.filter((c) => c.topIds?.includes(mine.playerId)).at(-1) ?? null;
   }
 
   /** Rewind so `overall` is back on the clock: undo every pick at or after it,

@@ -47,25 +47,25 @@ function numCol(f: string[], i: number): number | undefined {
 /** Split one CSV line, honoring double-quoted fields. */
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
-  let cur = '';
+  let cur: string[] = []; // buffer chars, join per field — linear, no += growth
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
+        cur.push('"');
         i++;
       } else {
         inQuotes = !inQuotes;
       }
     } else if (ch === ',' && !inQuotes) {
-      out.push(cur);
-      cur = '';
+      out.push(cur.join(''));
+      cur = [];
     } else {
-      cur += ch;
+      cur.push(ch);
     }
   }
-  out.push(cur);
+  out.push(cur.join(''));
   return out.map((s) => s.trim());
 }
 

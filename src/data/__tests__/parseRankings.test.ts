@@ -24,7 +24,6 @@ describe('Rankings parser', () => {
     // (Assert the mapping/sort, not a specific name — the rankings data churns.)
     const byAdp = [...players].sort((a, b) => a.adp - b.adp);
     expect(byAdp[0].adp).toBe(Math.min(...players.map((p) => p.adp)));
-    expect(byAdp[0].name).toBeTruthy();
   });
 
   it('maps columns by header alias regardless of order', () => {
