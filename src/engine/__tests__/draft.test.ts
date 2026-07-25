@@ -267,4 +267,22 @@ describe('Time machine (heist)', () => {
     expect(e.completed.at(-1)!.playerId).toBe(p);
     expect(e.lastHeist).toBeNull(); // no heist → nothing to notify
   });
+
+  it('a keeper at your slot is not a turn boundary — the heist rewinds past it', () => {
+    // Slot 1 keeps a player at 2.1 (overall 20); your real picks are overall 1 and 21.
+    // The keeper auto-recommits on rewind, so it must NOT stop a heist from reaching a
+    // bot that picked before it — otherwise the heist could never fire here at all.
+    const cells = new Map([[cellKey(2, 1), { round: 2, teamSlot: 1, keepers: [{ playerId: POOL[300].id, prob: 1 }] }]]);
+    const e = engineOf({ humanSlot: 1, seed: 1, cells });
+    e.runToCompletion(); // stops on your first pick (overall 1)
+    e.makePick(e.availablePlayers()[0].id);
+    e.runToCompletion(); // bots 2–19, keeper auto-commits at 20, stops on your pick at 21
+    expect(e.isHumanOnClock).toBe(true);
+    const taken = new Set(e.completed.map((c) => c.playerId));
+    const p = e.completed[1].topIds!.find((id) => !taken.has(id))!; // in a bot's top 15 before the keeper
+    e.makePick(p);
+    expect(e.heist(1)).toBe(true); // fires despite the intervening keeper
+    expect(e.lastHeist!.playerId).toBe(p);
+    expect(e.completed.find((c) => c.playerId === p)!.overall).toBeLessThan(20); // rewound past the 2.1 keeper
+  });
 });

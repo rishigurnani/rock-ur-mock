@@ -212,11 +212,13 @@ export class DraftEngine {
     return true;
   }
 
-  /** The LATEST bot pick since your last turn whose top-15 board held `mine`'s
-   *  player — the seat the heist steals him back from (null if none qualifies). */
+  /** The LATEST bot pick since your last ON-THE-CLOCK turn whose top-15 board held
+   *  `mine`'s player — the seat the heist steals him back from (null if none).
+   *  Keepers auto-recommit on rewind, so they aren't a turn and never bound it. */
   private findHeistVictim(mine: CompletedPick): CompletedPick | null {
+    const myTurn = (c: CompletedPick) => c.teamSlot === this.humanSlot && !keptPlayerId(this.order[c.overall - 1]);
     const priors = this.completed.filter((c) => c.overall < mine.overall);
-    const sinceMyTurn = priors.slice(priors.map((c) => c.teamSlot).lastIndexOf(this.humanSlot ?? -1) + 1);
+    const sinceMyTurn = priors.slice(priors.map(myTurn).lastIndexOf(true) + 1);
     return sinceMyTurn.filter((c) => c.topIds?.includes(mine.playerId)).at(-1) ?? null;
   }
 
