@@ -43,6 +43,13 @@ describe('Rankings parser', () => {
     expect(loadDataset('fp-2026').some((p) => p.bye != null)).toBe(true);
   });
 
+  it('honors quoted fields with embedded commas and "" escapes', () => {
+    const csv = ['PLAYER NAME,POS,TEAM,RK', '"Smith, Jr.",RB1,ATL,1', '"He said ""hi""",WR1,SF,2'].join('\n');
+    const players = parseRankingsCsv(csv);
+    expect(players[0].name).toBe('Smith, Jr.');
+    expect(players[1].name).toBe('He said "hi"');
+  });
+
   it('tags configured rookies', () => {
     const csv = ['PLAYER NAME,POS,TEAM,RK', 'Star Rookie,RB1,ATL,1'].join('\n');
     const players = parseRankingsCsv(csv, { rookieNames: new Set(['Star Rookie']) });

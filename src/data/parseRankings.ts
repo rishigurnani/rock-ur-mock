@@ -44,29 +44,14 @@ function numCol(f: string[], i: number): number | undefined {
   return (i !== -1 && Number(f[i])) || undefined;
 }
 
-/** Split one CSV line, honoring double-quoted fields. */
+/** Split one CSV line into trimmed fields: each is a "quoted" field (with ""→")
+ *  or a bare run up to the next comma. One tokenizer pass, no manual state. */
 function splitCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur: string[] = []; // buffer chars, join per field — linear, no += growth
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur.push('"');
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === ',' && !inQuotes) {
-      out.push(cur.join(''));
-      cur = [];
-    } else {
-      cur.push(ch);
-    }
+  const fields: string[] = [];
+  for (const [, quoted, bare] of line.matchAll(/(?:^|,)(?:"((?:[^"]|"")*)"|([^,]*))/g)) {
+    fields.push((quoted?.replace(/""/g, '"') ?? bare ?? '').trim());
   }
-  out.push(cur.join(''));
-  return out.map((s) => s.trim());
+  return fields;
 }
 
 function findColumn(header: string[], aliases: readonly string[]): number {
