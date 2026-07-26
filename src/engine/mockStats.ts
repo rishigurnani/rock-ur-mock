@@ -6,9 +6,9 @@
 // NAME so drafts run on different ranking pools still align.
 // ============================================================================
 
-import type { MatrixCell, Player, ResolvedPick } from '../types';
+import type { Player, ResolvedPick } from '../types';
 import type { Snapshot } from '../store/sessions';
-import { cellKey, resolvePickOrder, keeperCandidates, CellKey } from './matrix';
+import { keeperCandidates, orderFromCells } from './matrix';
 import { optimizeLineup } from './roster';
 
 /** Exactly the slice of a saved Snapshot the stats read, plus its name. Derived
@@ -52,29 +52,37 @@ function keptIds(order: ResolvedPick[], picks: string[]): Set<string> {
   return kept;
 }
 
+/** Re-price a player on the chosen ranking sheet (matched by name), so drafts
+ *  saved under different projections score on one common ruler; identity if none. */
+const reprice = (p: Player, by?: Map<string, number>): Player =>
+  by ? { ...p, projPoints: by.get(p.name) ?? p.projPoints } : p;
+
+/** One drafted pick's market footprint: the player, where they went, and whose. */
+interface PickFold { player: Player; pickNo: number; keeper: boolean; yours: boolean; }
+
+/** Fold one drafted pick into the market aggregate: a keeper counts as kept but
+ *  stays off the board math; anyone else records a board pick + your-exposure. */
+function foldPick(agg: Map<string, Agg>, { player, pickNo, keeper, yours }: PickFold): void {
+  const e = agg.get(player.name) ?? { player, picks: [], yours: 0, kept: 0 };
+  if (keeper) e.kept += 1;
+  else { e.picks.push(pickNo); if (yours) e.yours += 1; }
+  agg.set(player.name, e);
+}
+
 /** Fold one mock into the running player aggregate + slot counts; returns this
  *  mock's starting-lineup points for the outcome distribution. */
 function accumulate(m: MockInput, agg: Map<string, Agg>, slotCount: Map<number, number>, projByName?: Map<string, number>): number {
   if (m.humanSlot != null) slotCount.set(m.humanSlot, (slotCount.get(m.humanSlot) ?? 0) + 1);
   const byId = new Map(m.players.map((p) => [p.id, p]));
-  const order = resolvePickOrder({
-    teamCount: m.config.teamCount, roundCount: m.config.roundCount, preset: m.config.preset,
-    defaultTimerSeconds: 0,
-    cells: new Map<CellKey, MatrixCell>(m.cells.map((c) => [cellKey(c.round, c.teamSlot), c])),
-  });
+  const order = orderFromCells(m.config, m.cells);
   const kept = keptIds(order, m.picks);
   const mine: Player[] = [];
   m.picks.forEach((id, i) => {
-    const yours = m.humanSlot != null && order[i]?.owningTeamSlot === m.humanSlot;
     const p = byId.get(id);
-    // Your roster includes your keepers; re-price on the chosen sheet when given, so
-    // drafts saved under different projections score on one common ruler.
-    if (yours && p) mine.push(projByName ? { ...p, projPoints: projByName.get(p.name) ?? p.projPoints } : p);
     if (!p) return;
-    const e = agg.get(p.name) ?? { player: p, picks: [], yours: 0, kept: 0 };
-    if (kept.has(id)) e.kept += 1; // keepers count, but stay off the board math
-    else { e.picks.push(i + 1); if (yours) e.yours += 1; }
-    agg.set(p.name, e);
+    const yours = order[i]?.owningTeamSlot === m.humanSlot; // null humanSlot never equals a slot
+    if (yours) mine.push(reprice(p, projByName)); // your roster includes your keepers
+    foldPick(agg, { player: p, pickNo: i + 1, keeper: kept.has(id), yours });
   });
   return optimizeLineup(mine, m.config.rosterSlots).startingPoints;
 }

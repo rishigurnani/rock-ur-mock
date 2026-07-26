@@ -141,6 +141,11 @@ export interface ResolveOptions {
   cells?: Map<CellKey, MatrixCell>;
 }
 
+/** Resolve pick order from a saved draft's config + flat cell list — the shared bridge for replaying a Snapshot (mock stats, saved-draft search). */
+export function orderFromCells(config: Pick<ResolveOptions, 'teamCount' | 'roundCount' | 'preset'>, cells: MatrixCell[]): ResolvedPick[] {
+  return resolvePickOrder({ ...config, defaultTimerSeconds: 0, cells: new Map(cells.map((c) => [cellKey(c.round, c.teamSlot), c])) });
+}
+
 /** The order teamSlots pick in for a given round under the base preset. */
 function slotOrderForRound(
   round: number,

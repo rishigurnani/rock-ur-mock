@@ -7,6 +7,7 @@
 import type { DraftStore } from './draftStore';
 import type { MatrixCell, Player } from '../types';
 import { DEFAULT_DATASET_ID, loadDataset } from '../data/datasets';
+import { orderFromCells } from '../engine/matrix';
 
 /** Bump on any breaking change to the Snapshot shape. Stamped into every save so
  *  older backup files on disk can be migrated explicitly instead of breaking. */
@@ -21,6 +22,14 @@ export interface Snapshot extends Pick<DraftStore, 'datasetId' | 'players' | 'co
   picks: string[];
 }
 export interface SessionRec { id: string; name: string; savedAt: number; status: string; snap: Snapshot; }
+
+/** Lowercase search blob for a saved draft — name, status, seat, pool, size, and the players on YOUR team (the Drafts search corpus). */
+export function sessionSearchText(rec: SessionRec): string {
+  const s = rec.snap;
+  const byId = new Map(s.players.map((p) => [p.id, p]));
+  const mine = orderFromCells(s.config, s.cells).map((o, i) => (o.owningTeamSlot === s.humanSlot ? byId.get(s.picks[i])?.name : ''));
+  return [rec.name, rec.status, `slot ${s.humanSlot}`, s.datasetId, `${s.config.teamCount} team`, `${s.config.roundCount} round`, ...mine].join(' ').toLowerCase();
+}
 
 const SKEY = 'rockurmock.sessions';
 // One-time migration: carry saved drafts over from the old "sleeperg" key so

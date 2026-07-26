@@ -1,11 +1,11 @@
 import { useDraftStore } from '../store/draftStore';
-import { listSessions, type SessionRec } from '../store/sessions';
+import { listSessions, sessionSearchText, type SessionRec } from '../store/sessions';
 import { useCompare } from '../store/compare';
 import { MODIFIER_LIBRARY } from '../data/presets';
 import { listDatasets } from '../data/datasets';
 import { serializeRankingsCsv } from '../data/parseRankings';
 import { BrainSliders } from './BrainSliders';
-import { range1 } from '../lib/util';
+import { range1, matchesBool } from '../lib/util';
 import { useRef, useState, type ChangeEvent } from 'react';
 import type { RosterSlot } from '../types';
 import { tourAnchor } from '../tour/tour-types';
@@ -31,6 +31,7 @@ export function SetupPanel() {
   const { config, modifiers, teams, humanSlot } = store;
   const [editSlot, setEditSlot] = useState(1);
   const [sessName, setSessName] = useState('');
+  const [draftQ, setDraftQ] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -229,26 +230,22 @@ export function SetupPanel() {
       </div>
 
       <div className="panel" {...tourAnchor('compare-slots')}>
-        <h2>Drafts</h2>
+        <h2>Drafts · {listSessions().length}</h2>
         <div className="row" {...tourAnchor('save-mock')}>
           <input
             placeholder="Save current as…"
             value={sessName}
             onChange={(e) => setSessName(e.target.value)}
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 0 }}
           />
           <span>
             <button className="mini primary" onClick={() => { store.saveSession(sessName.trim() || 'Untitled'); setSessName(''); }}>Save</button>{' '}
-            <button className="mini" title="Restore a draft or a full backup file" onClick={() => importRef.current?.click()}>Import</button>
+            <button className="mini" title="Restore a draft or a full backup file" onClick={() => importRef.current?.click()}>Import</button>{' '}
+            <button className="mini" title="Back up all saved drafts to a file" onClick={exportAll}>⤓</button>
           </span>
         </div>
-        {listSessions().length > 0 && (
-          <div className="row">
-            <label className="truncate">{listSessions().length} saved</label>
-            <button className="mini" onClick={exportAll}>⤓ Backup all</button>
-          </div>
-        )}
-        {listSessions().map((sn) => {
+        {listSessions().length > 1 && <div className="row"><input placeholder='Search saved drafts...' value={draftQ} onChange={(e) => setDraftQ(e.target.value)} style={{ flex: 1 }} /></div>}
+        {(draftQ.trim() ? listSessions().filter((sn) => matchesBool(sessionSearchText(sn), draftQ)) : listSessions()).map((sn) => {
           const open = sn.id === store.activeSessionId;
           return (
           <div className={'row draft-row' + (open ? ' open-row' : '')} key={sn.id}>

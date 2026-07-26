@@ -25,6 +25,36 @@ export function matchesQuery(p: Player, tokens: string[]): boolean {
   );
 }
 
+/** Match a blob against a Google-style boolean query: `AND`/`OR`/`NOT`
+ *  (case-insensitive), parentheses to group, and "quoted" or bare terms
+ *  (substring tests). Precedence NOT > AND > OR; adjacent terms imply AND.
+ *  Empty query matches all; a malformed/half-typed tail is ignored, not thrown. */
+export function matchesBool(haystack: string, query: string): boolean {
+  const h = haystack.toLowerCase();
+  const toks = query.toLowerCase().match(/"[^"]*"|[()]|\S+/g) ?? [];
+  let i = 0;
+  function factor(): boolean {
+    const w = toks[i++];
+    if (w === 'not') return !factor();
+    if (w === '(') { const v = orExpr(); if (toks[i] === ')') i++; return v; }
+    return w == null || w === ')' ? true : h.includes(w.replace(/"/g, ''));
+  }
+  function andExpr(): boolean {
+    let v = factor();
+    while (i < toks.length && toks[i] !== ')' && toks[i] !== 'or') {
+      if (toks[i] === 'and') i++; // else adjacency implies AND
+      v = factor() && v;
+    }
+    return v;
+  }
+  function orExpr(): boolean {
+    let v = andExpr();
+    while (toks[i] === 'or') { i++; v = andExpr() || v; }
+    return v;
+  }
+  return toks.length ? orExpr() : true;
+}
+
 /** Index any id-bearing items into a Map for O(1) lookup by id. */
 export function indexById<T extends { id: string }>(items: T[]): Map<string, T> {
   const m = new Map<string, T>();

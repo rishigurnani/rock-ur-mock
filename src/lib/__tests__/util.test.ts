@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { indexById, range1, playerMeta, matchesQuery } from '../util';
+import { indexById, range1, playerMeta, matchesQuery, matchesBool } from '../util';
 import type { Player } from '../../types';
 
 const mk = (p: Partial<Player>): Player => ({
@@ -31,5 +31,20 @@ describe('util', () => {
     expect(matchesQuery(p, ['qb'])).toBe(false);
     expect(matchesQuery(p, ['bijan', 'qb'])).toBe(false); // one token fails → excluded
     expect(matchesQuery(p, [])).toBe(true); // empty query matches everything
+  });
+
+  it('matchesBool evaluates AND / OR / NOT, parentheses, and "quoted" terms', () => {
+    const doc = 'my draft slot 9 brandon aubrey cam ward fp-2026';
+    expect(matchesBool(doc, '"aubrey"')).toBe(true);
+    expect(matchesBool(doc, '"aubrey" AND "slot 9"')).toBe(true);
+    expect(matchesBool(doc, '"aubrey" AND "mahomes"')).toBe(false);
+    expect(matchesBool(doc, '"mahomes" OR "aubrey"')).toBe(true);
+    expect(matchesBool(doc, 'NOT "mahomes"')).toBe(true);
+    expect(matchesBool(doc, '"aubrey" AND NOT "ward"')).toBe(false); // NOT binds tightest
+    expect(matchesBool(doc, '("aubrey" AND "slot 9") OR "fairbairn"')).toBe(true);
+    expect(matchesBool(doc, '("mahomes" AND "slot 9") OR "fairbairn"')).toBe(false);
+    expect(matchesBool(doc, '"aubrey" OR "b" AND "mahomes"')).toBe(true); // AND above OR: aubrey OR (b AND mahomes)
+    expect(matchesBool(doc, 'aubrey ward')).toBe(true); // bare terms, implicit AND
+    expect(matchesBool(doc, '')).toBe(true); // empty → matches all
   });
 });
