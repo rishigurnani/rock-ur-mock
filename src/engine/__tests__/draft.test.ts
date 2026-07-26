@@ -31,6 +31,9 @@ function engineOf({ seed = 1, ...over }: Partial<DraftSetup> & { seed?: number }
 
 // Force pick ids into a fresh engine (reserved keepers fall back to step()) and
 // return the resulting pick order — the shared session-restore / replay path.
+// A bot pick's top-15 candidate ids, read off the stored shortlist.
+const shortlistIds = (c: { shortlist?: { playerId: string }[] }) => c.shortlist!.map((s) => s.playerId);
+
 function replay(mk: () => DraftEngine, ids: string[]): string[] {
   const e = mk();
   for (const id of ids) { try { e.makePick(id); } catch { e.step(); } }
@@ -234,10 +237,11 @@ describe('Time machine (heist)', () => {
     expect(e.isHumanOnClock).toBe(true);
     const bot2 = e.completed[1];
     const taken = new Set(e.completed.map((c) => c.playerId));
-    const p = bot2.topIds!.find((id) => !taken.has(id))!; // in the later bot's (#2) top 15, still free
+    const p = shortlistIds(bot2).find((id) => !taken.has(id))!; // in the later bot's (#2) top 15, still free
     e.makePick(p); // you draft p
     expect(e.heist(1)).toBe(true);
     expect(e.completed[1].playerId).toBe(p); // handed to the LATEST qualifying bot (pick #2, not #1)
+    expect(e.completed[1].trace).toBeTruthy(); // heisted pick carries the bot's score breakdown (tooltip)
     expect(e.isHumanOnClock).toBe(true); // your clock again — p is gone
     expect(e.availablePlayers().some((x) => x.id === p)).toBe(false);
     expect(e.lastHeist).toEqual({ playerId: p, teamSlot: bot2.teamSlot }); // recorded for the notice
@@ -247,8 +251,8 @@ describe('Time machine (heist)', () => {
     const e = engineOf({ humanSlot: 5, seed: 1 });
     e.runToCompletion(); // stops on your first pick (#5); bots took #1–#4
     const taken = new Set(e.completed.map((c) => c.playerId));
-    const a = e.completed[3].topIds!.find((id) => !taken.has(id))!; // in bot #4's top 15
-    const b = e.completed[2].topIds!.find((id) => !taken.has(id) && id !== a)!; // in bot #3's top 15
+    const a = shortlistIds(e.completed[3]).find((id) => !taken.has(id))!; // in bot #4's top 15
+    const b = shortlistIds(e.completed[2]).find((id) => !taken.has(id) && id !== a)!; // in bot #3's top 15
     e.makePick(a);
     expect(e.heist(1)).toBe(true); // A is heisted
     e.makePick(b);
@@ -279,7 +283,7 @@ describe('Time machine (heist)', () => {
     e.runToCompletion(); // bots 2–19, keeper auto-commits at 20, stops on your pick at 21
     expect(e.isHumanOnClock).toBe(true);
     const taken = new Set(e.completed.map((c) => c.playerId));
-    const p = e.completed[1].topIds!.find((id) => !taken.has(id))!; // in a bot's top 15 before the keeper
+    const p = shortlistIds(e.completed[1]).find((id) => !taken.has(id))!; // in a bot's top 15 before the keeper
     e.makePick(p);
     expect(e.heist(1)).toBe(true); // fires despite the intervening keeper
     expect(e.lastHeist!.playerId).toBe(p);

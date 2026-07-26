@@ -138,5 +138,5 @@ export interface CompletedPick {
   teamSlot: number;
   playerId: string;
   trace?: ScoreTrace;
-  topIds?: string[]; // a bot pick's top-15 candidate ids — the time machine's scoop check
+  shortlist?: { playerId: string; trace: ScoreTrace }[]; // a bot pick's top-15 candidates + traces — heist scoop check & stolen-pick tooltip
 }

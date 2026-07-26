@@ -18,7 +18,7 @@ import type {
 import { applyModifiers, EffectivePlayer } from './modifiers';
 import { resolvePickOrder, rollKeepers, keptPlayerId, draftHorizon, CellKey } from './matrix';
 import type { MatrixCell } from '../types';
-import { scoreCandidates, PRESETS, Rng } from './bot';
+import { scoreCandidates, PRESETS, Rng, ScoredCandidate } from './bot';
 import { RosterState } from './roster';
 
 export interface DraftSetup {
@@ -51,7 +51,7 @@ export class DraftEngine {
   cursor = 0;
   readonly completed: CompletedPick[] = [];
   lastHeist: { playerId: string; teamSlot: number } | null = null; // set by heist(), for the UI notice
-  private readonly forced = new Map<number, string>(); // heisted players pinned to a pick, re-applied on any rewind
+  private readonly forced = new Map<number, { playerId: string; trace: CompletedPick['trace'] }>(); // heisted players (+ the victim bot's read on them) pinned to a pick, re-applied on any rewind
 
   constructor(setup: DraftSetup) {
     this.config = setup.config;
@@ -160,7 +160,7 @@ export class DraftEngine {
     }
 
     const forced = this.forced.get(pick.overall);
-    if (forced && this.available.has(forced)) return this.commit(pick, this.available.get(forced)!, undefined);
+    if (forced && this.available.has(forced.playerId)) return this.commit(pick, this.available.get(forced.playerId)!, forced.trace);
     if (pick.owningTeamSlot === this.humanSlot) return null;
 
     const team = this.teamsBySlot.get(pick.owningTeamSlot);
@@ -176,14 +176,13 @@ export class DraftEngine {
     return this.botPick(pick, { ...team, brain: PRESETS.sharp });
   }
 
-  /** Score the bot's options for `pick` and commit its choice. */
-  private botPick(pick: ResolvedPick, team: Team): CompletedPick {
+  /** The bot brain's shortlist for `pick` on the current pool, sorted best-first. */
+  private scoreFor(pick: ResolvedPick, team: Team): ScoredCandidate[] {
     const { picksLeft, untilNext } = draftHorizon(this.order, this.cursor, pick.owningTeamSlot);
-
     const rosterPlayers = this.teamPlayerIds(pick.owningTeamSlot)
       .map((id) => this.byId.get(id))
       .filter((p): p is EffectivePlayer => !!p);
-    const scored = scoreCandidates(team.brain, {
+    return scoreCandidates(team.brain, {
       available: this.availablePlayers(),
       rosterPlayers,
       config: this.config,
@@ -194,9 +193,14 @@ export class DraftEngine {
       picksUntilNext: untilNext,
       rng: this.rng,
     });
+  }
+
+  /** Score the bot's options for `pick` and commit its choice. */
+  private botPick(pick: ResolvedPick, team: Team): CompletedPick {
+    const scored = this.scoreFor(pick, team);
     const choice = scored[0];
     if (!choice) throw new Error('No legal pick available');
-    return Object.assign(this.commit(pick, choice.player, choice.trace), { topIds: scored.slice(0, 15).map((c) => c.player.id) });
+    return Object.assign(this.commit(pick, choice.player, choice.trace), { shortlist: scored.slice(0, 15).map((c) => ({ playerId: c.player.id, trace: c.trace })) });
   }
 
   // Time machine (odds `chance`): rewind, giving the player you drafted to the LATEST bot since your last turn with him in its top 15, so you pick again. True if heisted.
@@ -207,7 +211,8 @@ export class DraftEngine {
     const hit = this.findHeistVictim(mine);
     if (!hit) return false;
     this.lastHeist = { playerId: mine.playerId, teamSlot: hit.teamSlot };
-    this.forced.set(hit.overall, mine.playerId); // pin it so a later heist's rewind re-applies it
+    const trace = hit.shortlist?.find((s) => s.playerId === mine.playerId)?.trace; // the victim's own read on him
+    this.forced.set(hit.overall, { playerId: mine.playerId, trace }); // pin it (+ trace) so a later rewind re-applies it
     this.rewindTo(hit.overall); this.runToCompletion();
     return true;
   }
@@ -219,7 +224,7 @@ export class DraftEngine {
     const myTurn = (c: CompletedPick) => c.teamSlot === this.humanSlot && !keptPlayerId(this.order[c.overall - 1]);
     const priors = this.completed.filter((c) => c.overall < mine.overall);
     const sinceMyTurn = priors.slice(priors.map(myTurn).lastIndexOf(true) + 1);
-    return sinceMyTurn.filter((c) => c.topIds?.includes(mine.playerId)).at(-1) ?? null;
+    return sinceMyTurn.filter((c) => c.shortlist?.some((s) => s.playerId === mine.playerId)).at(-1) ?? null;
   }
 
   /** Rewind so `overall` is back on the clock: undo every pick at or after it,
