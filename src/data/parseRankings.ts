@@ -21,6 +21,7 @@ const COLUMN_ALIASES = {
   rank: ['RK', 'RANK', 'ADP', 'OVERALL', 'ECR'],
   tags: ['TAGS', 'TAG'],
   bye: ['BYE WEEK', 'BYE'],
+  proj: ['PROJ', 'PROJ PTS', 'FPTS', 'PROJECTED POINTS'],
 } as const;
 
 // Projected-points curve per position: points at rank 1 and per-rank decay.
@@ -77,6 +78,7 @@ interface Columns {
   rank: number;
   tags: number;
   bye: number;
+  proj: number;
 }
 
 /** Parse-wide state threaded through every row: resolved columns, id prefix,
@@ -119,10 +121,20 @@ function rowToPlayer(f: string[], r: number, ctx: ParseContext): Player | null {
     position,
     team: f[cols.team] || 'FA',
     adp: cols.rank !== -1 && Number(f[cols.rank]) ? Number(f[cols.rank]) : r,
-    projPoints: synthProjection(position, posRank),
+    projPoints: numCol(f, cols.proj) ?? synthProjection(position, posRank),
     bye: numCol(f, cols.bye),
     tags: resolveTags(f, cols.tags, name, opts),
   };
+}
+
+/** Serialize a pool back into the upload CSV format — round-trips through
+ *  parseRankingsCsv. Headers reuse COLUMN_ALIASES, so the two never drift. */
+export function serializeRankingsCsv(players: Player[]): string {
+  const A = COLUMN_ALIASES;
+  const header = [A.name[0], A.pos[0], A.team[0], A.rank[0], A.bye[0], A.tags[0], A.proj[0]];
+  const rows = players.map((p) => [p.name, p.position, p.team, p.adp, p.bye ?? '', p.tags.join(';'), p.projPoints]);
+  const q = (v: unknown) => (/[",\n]/.test(`${v ?? ''}`) ? `"${`${v}`.replace(/"/g, '""')}"` : `${v ?? ''}`);
+  return [header, ...rows].map((r) => r.map(q).join(',')).join('\n');
 }
 
 /** Parse a rankings CSV string into the engine's Player[] shape. */
@@ -138,6 +150,7 @@ export function parseRankingsCsv(raw: string, opts: ParseOptions = {}): Player[]
     rank: findColumn(header, COLUMN_ALIASES.rank),
     tags: findColumn(header, COLUMN_ALIASES.tags),
     bye: findColumn(header, COLUMN_ALIASES.bye),
+    proj: findColumn(header, COLUMN_ALIASES.proj),
   };
 
   if (cols.name === -1 || cols.pos === -1) {

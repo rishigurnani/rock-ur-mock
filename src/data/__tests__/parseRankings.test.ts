@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRankingsCsv } from '../parseRankings';
+import { parseRankingsCsv, serializeRankingsCsv } from '../parseRankings';
 import { loadDataset } from '../datasets';
 import fantasyProsRaw from '../FantasyPros_2026_Draft_ALL_Rankings.csv?raw';
 
@@ -24,6 +24,19 @@ describe('Rankings parser', () => {
     // (Assert the mapping/sort, not a specific name — the rankings data churns.)
     const byAdp = [...players].sort((a, b) => a.adp - b.adp);
     expect(byAdp[0].adp).toBe(Math.min(...players.map((p) => p.adp)));
+  });
+
+  it('serializeRankingsCsv round-trips the editable fields back through the parser', () => {
+    const original = parseRankingsCsv(fantasyProsRaw, { idPrefix: 't' });
+    const reparsed = parseRankingsCsv(serializeRankingsCsv(original), { idPrefix: 't' });
+    const editable = (p: (typeof original)[number]) =>
+      ({ name: p.name, position: p.position, team: p.team, adp: p.adp, bye: p.bye, tags: p.tags, projPoints: p.projPoints });
+    expect(reparsed.map(editable)).toEqual(original.map(editable)); // PROJ column carries projPoints across the round-trip
+  });
+
+  it('reads an explicit PROJ column instead of synthesizing points', () => {
+    const csv = ['PLAYER NAME,POS,TEAM,RK,PROJ', 'Star,RB1,ATL,1,275'].join('\n');
+    expect(parseRankingsCsv(csv)[0].projPoints).toBe(275);
   });
 
   it('maps columns by header alias regardless of order', () => {

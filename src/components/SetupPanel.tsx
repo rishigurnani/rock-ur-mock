@@ -3,6 +3,7 @@ import { listSessions, type SessionRec } from '../store/sessions';
 import { useCompare } from '../store/compare';
 import { MODIFIER_LIBRARY } from '../data/presets';
 import { listDatasets } from '../data/datasets';
+import { serializeRankingsCsv } from '../data/parseRankings';
 import { BrainSliders } from './BrainSliders';
 import { range1 } from '../lib/util';
 import { useRef, useState, type ChangeEvent } from 'react';
@@ -44,14 +45,15 @@ export function SetupPanel() {
   // Portable drafts: snapshots are self-contained, so one JSON file holds a draft
   // (or the whole log). This file lives on YOUR disk — the durable backup that
   // survives a cleared browser, a new profile, or a port change.
-  const download = (data: unknown, name: string) => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+  const download = (content: string, name: string, type = 'application/json') => {
+    const url = URL.createObjectURL(new Blob([content], { type }));
     const a = Object.assign(document.createElement('a'), { href: url, download: name });
     a.click();
     URL.revokeObjectURL(url);
   };
-  const exportSession = (sn: SessionRec) => download(sn, `${sn.name}.rockurmock.json`);
-  const exportAll = () => download(listSessions(), `rock-ur-mock-backup-${new Date().toISOString().slice(0, 10)}.json`);
+  const exportSession = (sn: SessionRec) => download(JSON.stringify(sn), `${sn.name}.rockurmock.json`);
+  const exportAll = () => download(JSON.stringify(listSessions()), `rock-ur-mock-backup-${new Date().toISOString().slice(0, 10)}.json`);
+  const exportCsv = () => download(serializeRankingsCsv(store.players), `${store.datasetId}.csv`, 'text/csv');
   // Import restores either a single draft (object) or a full backup (array).
   const onImport = (file: File) =>
     readText(file, (t) => {
@@ -93,13 +95,10 @@ export function SetupPanel() {
         </div>
         <div className="row">
           <label>{store.players.length} players</label>
-          <button
-            className="mini"
-            disabled={store.started}
-            onClick={() => fileRef.current?.click()}
-          >
-            Upload CSV…
-          </button>
+          <div className="controls">
+            <button className="mini" onClick={exportCsv}>Export CSV…</button>
+            <button className="mini" disabled={store.started} onClick={() => fileRef.current?.click()}>Upload CSV…</button>
+          </div>
         </div>
         <input
           ref={fileRef}
