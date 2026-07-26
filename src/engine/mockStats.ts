@@ -54,7 +54,7 @@ function keptIds(order: ResolvedPick[], picks: string[]): Set<string> {
 
 /** Fold one mock into the running player aggregate + slot counts; returns this
  *  mock's starting-lineup points for the outcome distribution. */
-function accumulate(m: MockInput, agg: Map<string, Agg>, slotCount: Map<number, number>): number {
+function accumulate(m: MockInput, agg: Map<string, Agg>, slotCount: Map<number, number>, projByName?: Map<string, number>): number {
   if (m.humanSlot != null) slotCount.set(m.humanSlot, (slotCount.get(m.humanSlot) ?? 0) + 1);
   const byId = new Map(m.players.map((p) => [p.id, p]));
   const order = resolvePickOrder({
@@ -67,7 +67,9 @@ function accumulate(m: MockInput, agg: Map<string, Agg>, slotCount: Map<number, 
   m.picks.forEach((id, i) => {
     const yours = m.humanSlot != null && order[i]?.owningTeamSlot === m.humanSlot;
     const p = byId.get(id);
-    if (yours && p) mine.push(p); // your roster includes your keepers
+    // Your roster includes your keepers; re-price on the chosen sheet when given, so
+    // drafts saved under different projections score on one common ruler.
+    if (yours && p) mine.push(projByName ? { ...p, projPoints: projByName.get(p.name) ?? p.projPoints } : p);
     if (!p) return;
     const e = agg.get(p.name) ?? { player: p, picks: [], yours: 0, kept: 0 };
     if (kept.has(id)) e.kept += 1; // keepers count, but stay off the board math
@@ -77,10 +79,10 @@ function accumulate(m: MockInput, agg: Map<string, Agg>, slotCount: Map<number, 
   return optimizeLineup(mine, m.config.rosterSlots).startingPoints;
 }
 
-export function mockStats(mocks: MockInput[]): MockReport {
+export function mockStats(mocks: MockInput[], projByName?: Map<string, number>): MockReport {
   const agg = new Map<string, Agg>();
   const slotCount = new Map<number, number>();
-  const starterPts = mocks.map((m) => accumulate(m, agg, slotCount));
+  const starterPts = mocks.map((m) => accumulate(m, agg, slotCount, projByName));
 
   const players = [...agg.values()]
     .filter((e) => e.picks.length) // drafted at least once; pure keepers stay off the market

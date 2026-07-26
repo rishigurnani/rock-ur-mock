@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useDraftStore } from '../store/draftStore';
 import { listSessions } from '../store/sessions';
+import { listDatasets, loadDataset } from '../data/datasets';
 import { useCompare } from '../store/compare';
 import { mockStats } from '../engine/mockStats';
 import { playerMeta, matchesQuery } from '../lib/util';
@@ -13,11 +14,16 @@ export function MockStats() {
   const compare = useCompare();
   const [q, setQ] = useState('');
   const [min, setMin] = useState(false);
+  const [pointsFrom, setPointsFrom] = useState(''); // '' = each draft's own projections
   const recs = listSessions().filter((sn) => compare.ids.includes(sn.id));
+  const projByName = useMemo(
+    () => (pointsFrom ? new Map(loadDataset(pointsFrom).map((p) => [p.name, p.projPoints])) : undefined),
+    [pointsFrom],
+  );
   const r = useMemo(
-    () => mockStats(recs.map((s) => ({ name: s.name, ...s.snap }))),
+    () => mockStats(recs.map((s) => ({ name: s.name, ...s.snap })), projByName),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [compare.ids.join(','), store.version],
+    [compare.ids.join(','), store.version, projByName],
   );
   if (recs.length < 2) return null;
   const n = r.drafts;
@@ -36,6 +42,13 @@ export function MockStats() {
       </div>
 
       <h3>Your team</h3>
+      <div className="row">
+        <label title="Re-price every draft's starters on one ranking sheet, so mocks saved under different projections are comparable.">Points from</label>
+        <select className="truncate" value={pointsFrom} onChange={(e) => setPointsFrom(e.target.value)}>
+          <option value="">Each draft's own</option>
+          {listDatasets().map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      </div>
       <Stat label="Starter pts (median)" value={`${Math.round(r.starterMedian)}`} />
       <Stat label="Floor–ceiling (p10–p90)" value={`${Math.round(r.starterFloor)} – ${Math.round(r.starterCeiling)}`} />
       <Stat label="Mean ± σ" value={`${Math.round(r.starterMean)} ± ${Math.round(r.starterStd)}`} />

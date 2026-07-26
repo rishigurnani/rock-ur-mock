@@ -31,6 +31,13 @@ describe('mockStats (cross-draft aggregates)', () => {
     expect(report.yourSlots).toEqual([{ slot: 1, count: 1 }, { slot: 2, count: 1 }]);
   });
 
+  it('re-prices starters on a chosen sheet when projByName is given', () => {
+    const m = mock({ picks: ['a', 'b', 'c', 'd'] }); // your seat drafts A & D, each 100 pts
+    expect(mockStats([m]).starterMean).toBe(200); // default: each draft's own projections
+    const sheet = new Map([['A', 250], ['D', 130]]); // an overhauled ranking sheet, by name
+    expect(mockStats([m], sheet).starterMean).toBe(380); // re-priced: 250 + 130
+  });
+
   it('treats keepers as off-board: excluded from the market', () => {
     const players = ['A', 'B', 'C', 'D'].map((nm, i) => ({ ...P(nm.toLowerCase(), nm), adp: i + 1 }));
     // Team 1 keeps A at R1; you are seat 2.
