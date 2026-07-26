@@ -194,7 +194,7 @@ export function SetupPanel() {
       </div>
 
       <div className="panel">
-        <h2>Universal Modifiers</h2>
+        <h2>Common Modifiers</h2>
         {(Object.keys(MODIFIER_LABELS) as (keyof typeof MODIFIER_LIBRARY)[]).map((key) => (
           <label className="toggle" key={key}>
             <input
