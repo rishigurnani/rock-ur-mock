@@ -13,6 +13,7 @@ import type {
   Player,
   Position,
   ResolvedPick,
+  ScoreTrace,
   Team,
 } from '../types';
 import { applyModifiers, EffectivePlayer } from './modifiers';
@@ -20,6 +21,10 @@ import { resolvePickOrder, rollKeepers, keptPlayerId, draftHorizon, CellKey } fr
 import type { MatrixCell } from '../types';
 import { scoreCandidates, PRESETS, Rng, ScoredCandidate } from './bot';
 import { RosterState } from './roster';
+
+/** One scoring context: the roster and pool a board is judged against, the horizon
+ *  cursor, and the RNG (live for a real pick, flat for a hypothetical re-score). */
+interface ScoreCtx { roster: EffectivePlayer[]; available: EffectivePlayer[]; cursor: number; rng: Rng }
 
 export interface DraftSetup {
   players: Player[];
@@ -51,7 +56,10 @@ export class DraftEngine {
   cursor = 0;
   readonly completed: CompletedPick[] = [];
   lastHeist: { playerId: string; teamSlot: number } | null = null; // set by heist(), for the UI notice
-  private readonly forced = new Map<number, { playerId: string; trace: CompletedPick['trace'] }>(); // heisted players (+ the victim bot's read on them) pinned to a pick, re-applied on any rewind
+  // Players pinned to a pick. `heist` marks a time-machine steal vs a manual user pin:
+  // a heist's trace is recomputed honestly at commit and it's undone by a user rewind,
+  // whereas a user pin persists and previews/counts on the board as a pending pin.
+  private readonly forced = new Map<number, { playerId: string; heist?: boolean }>();
 
   constructor(setup: DraftSetup) {
     this.config = setup.config;
@@ -103,14 +111,15 @@ export class DraftEngine {
     return [...done, ...reserved.filter((id) => !have.has(id))];
   }
 
-  /** Players pinned live but not yet drafted — reserved exactly like keepers: held
-   *  out of the pool so nobody scoops them, and counted onto their owner's roster
-   *  from the moment the pin is set. Pass `slot` to get just that team's pins.
-   *  (Heisted pins commit at once, so they're never available and never listed.) */
+  /** USER-pinned (not heisted) players not yet drafted — counted onto their owner's
+   *  roster from the moment the pin is set, exactly like a keeper. Pass `slot` for
+   *  one team's pins. Heists are excluded: a steal counts only once truly committed. */
   private pins(slot?: number): string[] {
     const out: string[] = [];
-    for (const [o, f] of this.forced)
-      if (this.available.has(f.playerId) && (slot == null || this.order[o - 1]?.owningTeamSlot === slot)) out.push(f.playerId);
+    for (const [o, f] of this.forced) {
+      if (f.heist || !this.available.has(f.playerId)) continue; // heists & committed players aren't pending pins
+      if (slot == null || this.order[o - 1]?.owningTeamSlot === slot) out.push(f.playerId);
+    }
     return out;
   }
 
@@ -142,8 +151,11 @@ export class DraftEngine {
   }
 
   availablePlayers(): EffectivePlayer[] {
-    const pinned = new Set(this.pins());
-    return [...this.available.values()].filter((p) => !pinned.has(p.id));
+    // Hold any not-yet-drafted forced player — a live user pin OR a heist awaiting
+    // its re-run after a rewind — out of the pool, so nobody scoops them first.
+    const reserved = new Set<string>();
+    for (const [, f] of this.forced) if (this.available.has(f.playerId)) reserved.add(f.playerId);
+    return [...this.available.values()].filter((p) => !reserved.has(p.id));
   }
 
   rosterFor(slot: number): RosterState {
@@ -166,22 +178,29 @@ export class DraftEngine {
   step(): CompletedPick | null {
     const pick = this.currentPick;
     if (!pick) return null;
-
-    // Keeper: locked player (reserved out of the pool), no bot logic.
-    const kept = keptPlayerId(pick);
-    if (kept) {
-      const keeper = this.byId.get(kept);
-      if (keeper) return this.commit(pick, keeper, undefined);
-      // Keeper id not in dataset (e.g. stale) — fall through to auto-pick.
-    }
-
-    const forced = this.forced.get(pick.overall);
-    if (forced && this.available.has(forced.playerId)) return this.commit(pick, this.available.get(forced.playerId)!, forced.trace);
-    if (pick.owningTeamSlot === this.humanSlot) return null;
-
+    const predetermined = this.commitKeeper(pick) ?? this.commitForced(pick);
+    if (predetermined) return predetermined;
+    if (pick.owningTeamSlot === this.humanSlot) return null; // human's free choice — wait for makePick
     const team = this.teamsBySlot.get(pick.owningTeamSlot);
     if (!team) throw new Error(`No team at slot ${pick.owningTeamSlot}`);
     return this.botPick(pick, team);
+  }
+
+  /** The locked keeper at `pick`, committed — or null if it isn't a resolvable keeper
+   *  (a stale keeper id falls through to an auto-pick). */
+  private commitKeeper(pick: ResolvedPick): CompletedPick | null {
+    const kept = keptPlayerId(pick);
+    const keeper = kept ? this.byId.get(kept) : undefined;
+    return keeper ? this.commit(pick, keeper, undefined) : null;
+  }
+
+  /** The forced player (a heist or a user pin) at `pick`, committed — or null if none
+   *  is pending. A steal's trace is re-scored honestly at commit; a user pin has none. */
+  private commitForced(pick: ResolvedPick): CompletedPick | null {
+    const forced = this.forced.get(pick.overall);
+    if (!forced || !this.available.has(forced.playerId)) return null;
+    const player = this.available.get(forced.playerId)!;
+    return this.commit(pick, player, forced.heist ? this.freshTrace(pick, player) : undefined);
   }
 
   /** Hand the human's own pick to the CPU, using the sharp bot brain. */
@@ -192,23 +211,51 @@ export class DraftEngine {
     return this.botPick(pick, { ...team, brain: PRESETS.sharp });
   }
 
-  /** The bot brain's shortlist for `pick` on the current pool, sorted best-first. */
-  private scoreFor(pick: ResolvedPick, team: Team): ScoredCandidate[] {
-    const { picksLeft, untilNext } = draftHorizon(this.order, this.cursor, pick.owningTeamSlot);
-    const rosterPlayers = this.teamPlayerIds(pick.owningTeamSlot)
+  /** This team's roster as EffectivePlayers, optionally dropping one id (the pick a
+   *  heist would replace — the steal is judged against what the team would KEEP). */
+  private rosterOf(slot: number, exclude?: string): EffectivePlayer[] {
+    return this.teamPlayerIds(slot)
+      .filter((id) => id !== exclude)
       .map((id) => this.byId.get(id))
       .filter((p): p is EffectivePlayer => !!p);
+  }
+
+  /** Core scoring: `team`'s ranked board for `pick` under one scoring context. `rng` is
+   *  the live one for a real pick, a flat 0.5 for a hypothetical (a heist re-score) so
+   *  the what-if never perturbs the actual draft. */
+  private score(pick: ResolvedPick, team: Team, ctx: ScoreCtx): ScoredCandidate[] {
+    const { picksLeft, untilNext } = draftHorizon(this.order, ctx.cursor, pick.owningTeamSlot);
     return scoreCandidates(team.brain, {
-      available: this.availablePlayers(),
-      rosterPlayers,
-      config: this.config,
-      modifiers: this.modifiers,
-      totalPlayerPool: this.effective.length,
-      currentPick: pick.overall,
-      picksLeft,
-      picksUntilNext: untilNext,
-      rng: this.rng,
+      available: ctx.available, rosterPlayers: ctx.roster, config: this.config, modifiers: this.modifiers,
+      totalPlayerPool: this.effective.length, currentPick: pick.overall,
+      picksLeft, picksUntilNext: untilNext, rng: ctx.rng,
     });
+  }
+
+  /** The bot brain's shortlist for `pick` on the live board, sorted best-first. */
+  private scoreFor(pick: ResolvedPick, team: Team): ScoredCandidate[] {
+    return this.score(pick, team, { roster: this.rosterOf(pick.owningTeamSlot), available: this.availablePlayers(), cursor: this.cursor, rng: this.rng });
+  }
+
+  /** The victim bot's OWN read on a stolen player, scored at commit against its roster
+   *  as of this pick (the reserved player added back into the running pool). */
+  private freshTrace(pick: ResolvedPick, player: EffectivePlayer): ScoreTrace | undefined {
+    const team = this.teamsBySlot.get(pick.owningTeamSlot);
+    if (!team) return undefined;
+    return this.score(pick, team, { roster: this.rosterOf(pick.owningTeamSlot), available: [player, ...this.availablePlayers()], cursor: this.cursor, rng: this.rng })
+      .find((s) => s.player.id === player.id)?.trace;
+  }
+
+  /** Would the bot at `c` still rank `playerId` in its top 15 if re-scored NOW against
+   *  its live roster (minus that pick's own player)? A steal only lands where the
+   *  victim genuinely wants him, so a player a bot already covers falls out and the
+   *  search moves on — no chaos (flat rng), and never onto an existing pin/steal. */
+  private wouldShortlist(c: CompletedPick, playerId: string): boolean {
+    const team = this.teamsBySlot.get(c.teamSlot);
+    const player = this.byId.get(playerId);
+    if (!team || !player) return false;
+    const scored = this.score(this.order[c.overall - 1], team, { roster: this.rosterOf(c.teamSlot, c.playerId), available: [player, ...this.availablePlayers()], cursor: c.overall - 1, rng: () => 0.5 });
+    return scored.slice(0, 15).some((s) => s.player.id === playerId);
   }
 
   /** Score the bot's options for `pick` and commit its choice. */
@@ -227,17 +274,16 @@ export class DraftEngine {
     const hit = this.findHeistVictim(mine);
     if (!hit) return false;
     this.lastHeist = { playerId: mine.playerId, teamSlot: hit.teamSlot };
-    const trace = hit.shortlist?.find((s) => s.playerId === mine.playerId)?.trace; // the victim's own read on him
-    this.force(hit.overall, mine.playerId, trace); // pin it (+ trace); rewinds so any later rewind re-applies it
+    this.force(hit.overall, mine.playerId, { heist: true }); // its trace is re-scored honestly at commit
     this.runToCompletion();
     return true;
   }
 
-  /** Pin `playerId` to pick `overall` and rewind there so the re-run commits it —
-   *  the shared mechanism behind the heist and a manual "fix to this slot" (re-applies
-   *  on any later rewind). Caller runs the board forward afterward. */
-  force(overall: number, playerId: string, trace?: CompletedPick['trace']): void {
-    this.forced.set(overall, { playerId, trace });
+  /** Pin `playerId` to pick `overall` and rewind there so the re-run commits it — the
+   *  shared mechanism behind a manual "fix to this slot" and (with `heist`) the time
+   *  machine. A pin persists across rewinds; a heist is undone by a user's rewind. */
+  force(overall: number, playerId: string, opts?: { heist?: boolean }): void {
+    this.forced.set(overall, { playerId, heist: opts?.heist });
     this.rewindTo(overall);
   }
 
@@ -246,34 +292,51 @@ export class DraftEngine {
     return this.order.find((p) => p.round === round && p.owningTeamSlot === teamSlot)?.overall ?? null;
   }
 
-  /** A player force-pinned to `overall` but not yet drafted there — the pending pin
-   *  the board previews before the slot is reached (null once committed, so a
-   *  heisted pick never shows as pending). */
+  /** A player USER-pinned to `overall` but not yet drafted there — the pending pin
+   *  the board previews before the slot is reached (null once committed). A heist is
+   *  excluded: a rewound-but-not-yet-recommitted steal is not a user pin. */
   pinnedAt(overall: number): string | null {
     const f = this.forced.get(overall);
-    return f && this.available.has(f.playerId) ? f.playerId : null;
+    return f && !f.heist && this.available.has(f.playerId) ? f.playerId : null;
   }
 
-  /** The LATEST bot pick since your last ON-THE-CLOCK turn whose top-15 board held
-   *  `mine`'s player — the seat the heist steals him back from (null if none).
-   *  Keepers auto-recommit on rewind, so they aren't a turn and never bound it. */
+  /** The LATEST bot pick since your last ON-THE-CLOCK turn that — RE-SCORED against
+   *  its current roster — still wants `mine`'s player, walking backward one slot at a
+   *  time until one does (null if none reaches your last turn). Re-scoring is what makes
+   *  a redundant steal (a 2nd QB) fall out and relocate to a bot that truly needs him,
+   *  so two of a position land together only in the rare case a bot ranks him anyway. */
   private findHeistVictim(mine: CompletedPick): CompletedPick | null {
     const myTurn = (c: CompletedPick) => c.teamSlot === this.humanSlot && !keptPlayerId(this.order[c.overall - 1]);
     const priors = this.completed.filter((c) => c.overall < mine.overall);
     const sinceMyTurn = priors.slice(priors.map(myTurn).lastIndexOf(true) + 1);
-    return sinceMyTurn.filter((c) => c.shortlist?.some((s) => s.playerId === mine.playerId)).at(-1) ?? null;
+    for (let i = sinceMyTurn.length - 1; i >= 0; i--) {
+      const c = sinceMyTurn[i]; // a shortlist marks a real bot pick — never a keeper, pin or prior steal (unstealable)
+      if (c.shortlist && this.wouldShortlist(c, mine.playerId)) return c;
+    }
+    return null;
   }
 
   /** Rewind so `overall` is back on the clock: undo every pick at or after it,
-   *  returning drafted players to the pool (reserved keepers stay reserved).
-   *  A no-op if nothing at/after `overall` has been committed. */
-  rewindTo(overall: number): void {
+   *  returning drafted players to the pool (reserved keepers stay reserved). With
+   *  `clearHeists`, a USER rewind also drops any steal at/after `overall` — the stolen
+   *  player goes back to the pool for good, not re-taken. A no-op if nothing to undo. */
+  rewindTo(overall: number, clearHeists = false): void {
     while (this.completed.length && this.completed[this.completed.length - 1].overall >= overall) {
-      const undone = this.completed.pop()!;
-      const player = this.byId.get(undone.playerId);
-      if (player && !keptPlayerId(this.order[undone.overall - 1])) this.available.set(player.id, player);
+      this.returnToPool(this.completed.pop()!);
     }
     this.cursor = this.completed.length;
+    if (clearHeists) this.dropHeistsFrom(overall);
+  }
+
+  /** Undo `done`, returning its drafted player to the pool (a reserved keeper stays out). */
+  private returnToPool(done: CompletedPick): void {
+    const player = this.byId.get(done.playerId);
+    if (player && !keptPlayerId(this.order[done.overall - 1])) this.available.set(player.id, player);
+  }
+
+  /** Drop every steal pinned at or after `overall` (a user rewind un-steals them). */
+  private dropHeistsFrom(overall: number): void {
+    for (const [o, f] of this.forced) if (o >= overall && f.heist) this.forced.delete(o);
   }
 
   /** Run every remaining pick that isn't gated on the human seat. */

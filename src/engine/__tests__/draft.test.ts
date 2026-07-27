@@ -6,7 +6,7 @@ import { applyModifiers } from '../modifiers';
 import { loadDataset } from '../../data/datasets';
 import { DEFAULT_LEAGUE, makeModifier } from '../../data/presets';
 import { mulberry32 as seeded } from '../../lib/util';
-import type { Team } from '../../types';
+import type { Player, Team } from '../../types';
 
 // Tests run against the canonical CSV-backed pool via the dataset registry.
 const POOL = loadDataset('fp-2026');
@@ -273,6 +273,41 @@ describe('Fix a player to a slot (force)', () => {
   });
 });
 
+// A heist and a manual pin share the `forced` mechanism but are NOT the same thing:
+// only a user pin previews/counts on the board. These pin the distinction so the
+// "rewind turns a heist into a pin" class of bug can't come back.
+describe('Pins vs heists (forced-pick separation)', () => {
+  // Force one of each on a fresh engine: force(overall, id) = user pin;
+  // force(overall, id, {trace}) = heist. Fresh board so nothing is committed yet.
+  const twoForced = () => {
+    const e = engineOf({ seed: 4 });
+    const [pinId, heistId] = [e.availablePlayers()[0].id, e.availablePlayers()[1].id];
+    const [pinAt, heistAt] = [e.pickAt(3, 7)!, e.pickAt(3, 8)!];
+    e.force(pinAt, pinId); // manual user pin
+    e.force(heistAt, heistId, { heist: true }); // heist-flagged pin
+    return { e, pinId, heistId, pinAt, heistAt };
+  };
+
+  it('pinnedAt previews a user pin but never a heist', () => {
+    const { e, pinId, pinAt, heistAt } = twoForced();
+    expect(e.pinnedAt(pinAt)).toBe(pinId); // the board shows a manual pin
+    expect(e.pinnedAt(heistAt)).toBeNull(); // but a heisted slot is not a pending pin
+  });
+
+  it('a user pin counts on its roster; an uncommitted heist does not', () => {
+    const { e, pinId, heistId } = twoForced();
+    expect(e.teamPlayerIds(7)).toContain(pinId); // pin joins the roster at once (keeper-like)
+    expect(e.teamPlayerIds(8)).not.toContain(heistId); // a steal counts only once truly committed
+  });
+
+  it('both a user pin and an uncommitted heist are held out of the pool', () => {
+    const { e, pinId, heistId } = twoForced();
+    const pool = new Set(e.availablePlayers().map((p) => p.id));
+    expect(pool.has(pinId)).toBe(false); // nobody can scoop a pinned player
+    expect(pool.has(heistId)).toBe(false); // nor a heisted one awaiting its re-run
+  });
+});
+
 describe('Time machine (heist)', () => {
   it('rewinds a heisted pick to the LATEST bot that had the player in its top 15', () => {
     const e = engineOf({ humanSlot: 3, seed: 1 });
@@ -331,5 +366,108 @@ describe('Time machine (heist)', () => {
     expect(e.heist(1)).toBe(true); // fires despite the intervening keeper
     expect(e.lastHeist!.playerId).toBe(p);
     expect(e.completed.find((c) => c.playerId === p)!.overall).toBeLessThan(20); // rewound past the 2.1 keeper
+  });
+
+  it('a heisted pick carries the victim bot\'s trace but no shortlist (unlike a real bot pick)', () => {
+    const e = engineOf({ humanSlot: 3, seed: 1 });
+    e.runToCompletion();
+    const taken = new Set(e.completed.map((c) => c.playerId));
+    const p = shortlistIds(e.completed[1]).find((id) => !taken.has(id))!;
+    e.makePick(p);
+    expect(e.heist(1)).toBe(true);
+    const stolen = e.completed.find((c) => c.playerId === p)!;
+    expect(stolen.trace).toBeTruthy(); // the victim's read powers the tooltip
+    expect(stolen.shortlist).toBeUndefined(); // forced steal, not a fresh bot evaluation
+  });
+
+  it('a USER rewind past a heist returns the stolen player to the pool (no re-steal, no pin)', () => {
+    // The reported bug: rewinding past a heisted pick left the stolen player stuck to
+    // that slot (shown as a 📌 pin, re-stolen on re-run). A user rewind must UNDO the
+    // steal like any pick — the player goes back to the pool, free to be drafted again.
+    const e = engineOf({ humanSlot: 3, seed: 1 });
+    e.runToCompletion();
+    const taken = new Set(e.completed.map((c) => c.playerId));
+    const p = shortlistIds(e.completed[1]).find((id) => !taken.has(id))!;
+    e.makePick(p);
+    expect(e.heist(1)).toBe(true);
+    const at = e.completed.find((c) => c.playerId === p)!.overall;
+
+    e.rewindTo(at, true); // the user's rewind (the store passes clearHeists)
+    expect(e.pinnedAt(at)).toBeNull(); // not surfaced as a pending pin
+    expect(e.availablePlayers().some((x) => x.id === p)).toBe(true); // BACK in the pool, un-reserved
+  });
+
+  it('a redundant 2nd QB CAN be stolen onto a set team — but scored with an HONEST low need (< 1)', () => {
+    // Back-to-back QBs are allowed; what was broken is the trace. A bot already holding
+    // the better QB may still be handed a weaker one, but its need is re-scored against
+    // the filled roster — a redundant < 1, never the phantom > 1 the old frozen read showed.
+    const mk = (id: string, name: string, position: Player['position'], adp: number, projPoints: number): Player =>
+      ({ id, name, position, team: 'X', adp, projPoints, tags: [] });
+    const pool = [
+      mk('qa', 'QB A', 'QB', 1, 400), mk('r1', 'RB 1', 'RB', 2, 320), mk('r2', 'RB 2', 'RB', 3, 310),
+      mk('r3', 'RB 3', 'RB', 4, 300), mk('r4', 'RB 4', 'RB', 5, 290), mk('qb', 'QB B', 'QB', 6, 150),
+    ];
+    const e = new DraftEngine({
+      players: pool, modifiers: [], teams: botTeams(2), humanSlot: 1, rng: seeded(1),
+      config: { teamCount: 2, roundCount: 3, preset: 'snake', rosterSlots: { QB: 1, RB: 2 } },
+    });
+    e.runToCompletion(); // your pick #1
+    e.makePick('r1'); e.runToCompletion(); // bot grabs elite QB A (#2); back to you at #4
+    expect(e.teamPlayerIds(2)).toContain('qa'); // the bot already holds the better QB
+    e.makePick('qb'); // you draft weak QB B — which the bot shortlisted
+    expect(e.heist(1)).toBe(true); // the steal fires (back-to-back QBs allowed)
+    const stolen = e.completed.find((c) => c.playerId === 'qb')!;
+    expect(stolen.teamSlot).toBe(2); // handed to the bot that already has QB A
+    expect(stolen.trace!.needMultiplier).toBeLessThan(1); // re-scored honestly: redundant depth
+  });
+
+  it('across seeds, redundant QBs re-score out and relocate — no two EARLY QB steals on one team, never both need > 1', () => {
+    const posOf = (id: string) => POOL.find((p) => p.id === id)!.position;
+    const isHeisted = (c: { trace?: unknown; shortlist?: unknown }) => !!c.trace && !c.shortlist;
+    const early = 0.67 * DEFAULT_LEAGUE.teamCount * DEFAULT_LEAGUE.roundCount; // the backup-QB-penalty window
+    for (let seed = 1; seed < 20; seed++) {
+      const e = new DraftEngine({ players: POOL, modifiers: [], teams: botTeams(10), humanSlot: 1, config: DEFAULT_LEAGUE, rng: seeded(seed) });
+      let guard = 0;
+      while (!e.isComplete && guard++ < 400) {
+        if (e.isHumanOnClock) {
+          const qb = e.availablePlayers().find((p) => p.position === 'QB'); // hoard QBs to stress QB heists
+          e.makePick((qb ?? e.availablePlayers()[0]).id);
+          if (!e.heist(1)) e.runToCompletion();
+        } else e.step();
+      }
+      const qbsByTeam = new Map<number, typeof e.completed>();
+      for (const c of e.completed)
+        if (posOf(c.playerId) === 'QB' && c.teamSlot !== 1) qbsByTeam.set(c.teamSlot, [...(qbsByTeam.get(c.teamSlot) ?? []), c]);
+      for (const [, qbs] of qbsByTeam) {
+        const steals = qbs.filter(isHeisted);
+        expect(steals.filter((c) => c.trace!.needMultiplier > 1).length).toBeLessThanOrEqual(1); // at most one honest "empty slot" read
+        expect(steals.filter((c) => c.overall <= early).length).toBeLessThanOrEqual(1); // the Burrow/Maye case: a redundant early QB relocates
+      }
+    }
+  });
+
+  it('a stolen QB\'s need honestly tracks the victim roster — genuine (>= 1) AND redundant (< 1) both occur', () => {
+    // Proves the commit-time re-score is real: a QB stolen onto an empty slot reads a
+    // genuine need, the same position stolen onto a filled slot reads redundant depth.
+    // A frozen trace (the old bug) could never produce the sub-1 reads.
+    const posOf = (id: string) => POOL.find((p) => p.id === id)!.position;
+    const isHeisted = (c: { trace?: unknown; shortlist?: unknown }) => !!c.trace && !c.shortlist;
+    let genuine = 0;
+    let redundant = 0;
+    for (let seed = 1; seed < 25; seed++) {
+      const e = new DraftEngine({ players: POOL, modifiers: [], teams: botTeams(10), humanSlot: 1, config: DEFAULT_LEAGUE, rng: seeded(seed) });
+      let guard = 0;
+      while (!e.isComplete && guard++ < 400) {
+        if (e.isHumanOnClock) {
+          const qb = e.availablePlayers().find((p) => p.position === 'QB');
+          e.makePick((qb ?? e.availablePlayers()[0]).id);
+          if (!e.heist(1)) e.runToCompletion();
+        } else e.step();
+      }
+      for (const c of e.completed)
+        if (isHeisted(c) && posOf(c.playerId) === 'QB') (c.trace!.needMultiplier >= 1 ? genuine++ : redundant++);
+    }
+    expect(genuine).toBeGreaterThan(0);
+    expect(redundant).toBeGreaterThan(0); // honest low-need reads exist — the fix, provable
   });
 });

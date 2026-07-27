@@ -338,9 +338,10 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   autoToHuman: () => advance(get, set, (e) => e.runToCompletion()),
   // Let bots roll until the human is on the clock again after a manual pick.
   makePick: (playerId) => advance(get, set, (e) => { e.makePick(playerId); if (!e.heist(get().config.heistChance ?? 0)) e.runToCompletion(); }),
-  // Rewind to an earlier pick and PAUSE there (bots do NOT auto-run) so the board
-  // can be inspected; Resume / Enter / Step roll forward again from that point.
-  rewindTo: (overall) => advance(get, set, (e) => e.rewindTo(overall)),
+  // Rewind to an earlier pick and PAUSE there (bots do NOT auto-run) so the board can
+  // be inspected; Resume / Enter / Step roll forward again. A user rewind past a heist
+  // returns the stolen player to the pool (clearHeists) rather than re-stealing him.
+  rewindTo: (overall) => advance(get, set, (e) => e.rewindTo(overall, true)),
   // Fix a player to a team's pick in a round: force it there and re-run the board.
   pinPlayer: (round, teamSlot, playerId) =>
     advance(get, set, (e) => { const at = e.pickAt(round, teamSlot); if (at != null) { e.force(at, playerId); e.runToCompletion(); } }),
