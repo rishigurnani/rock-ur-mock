@@ -217,6 +217,7 @@ export interface DraftStore {
   autoToHuman: () => void;
   makePick: (playerId: string) => void;
   rewindTo: (overall: number) => void;
+  pinPlayer: (round: number, teamSlot: number, playerId: string) => void;
 }
 
 // --- Imperative actions (engine mutation + session I/O) ---------------------
@@ -340,6 +341,9 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   // Rewind to an earlier pick and PAUSE there (bots do NOT auto-run) so the board
   // can be inspected; Resume / Enter / Step roll forward again from that point.
   rewindTo: (overall) => advance(get, set, (e) => e.rewindTo(overall)),
+  // Fix a player to a team's pick in a round: force it there and re-run the board.
+  pinPlayer: (round, teamSlot, playerId) =>
+    advance(get, set, (e) => { const at = e.pickAt(round, teamSlot); if (at != null) { e.force(at, playerId); e.runToCompletion(); } }),
 }));
 
 // Warn before a tab close or reload would silently drop an unsaved draft — the

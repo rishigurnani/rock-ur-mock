@@ -83,8 +83,10 @@ export function PickMatrix() {
                   const candidates = keeperCandidates(pick);
                   const isKeeper = candidates.length > 0;
                   // A completed pick or a lone resolved keeper shows one player;
-                  // an unrolled cell with rival candidates lists them all.
-                  const occupantId = done?.playerId ?? keptPlayerId(pick);
+                  // an unrolled cell with rival candidates lists them all. A pending
+                  // pin previews its player here before the draft reaches the slot.
+                  const pinnedId = !done && !isKeeper ? engine?.pinnedAt(pick.overall) ?? null : null;
+                  const occupantId = done?.playerId ?? keptPlayerId(pick) ?? pinnedId;
                   const player = occupantId ? playerById.get(occupantId) : undefined;
                   const soleProb = candidates.length === 1 ? candidates[0].prob : undefined;
                   const onClock = pick.overall === currentOverall;
@@ -96,7 +98,8 @@ export function PickMatrix() {
                       className={
                         'cell' +
                         (onClock ? ' onclock' : '') +
-                        (isKeeper ? ' keeper' : '')
+                        (isKeeper ? ' keeper' : '') +
+                        (pinnedId ? ' pinned' : '')
                       }
                       title={done?.trace ? traceText(done, playerById) : undefined}
                       onContextMenu={done ? (e) => rewind(e, pick.overall) : undefined}
@@ -118,6 +121,7 @@ export function PickMatrix() {
                       <div className="meta">
                         #{pick.overall}
                         {traded ? ` · via T${pick.owningTeamSlot}` : ''}
+                        {pinnedId ? ' · 📌 PIN' : ''}
                         {isKeeper
                           ? candidates.length > 1
                             ? ' · KEEP?'

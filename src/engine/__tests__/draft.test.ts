@@ -230,6 +230,49 @@ describe('Full draft simulation', () => {
   });
 });
 
+describe('Fix a player to a slot (force)', () => {
+  it('holds a pinned player out of the pool until his slot (no early scoop)', () => {
+    // Pin the #1 overall player — whom bots would grab at pick #1 — to Team 7 /
+    // Round 3. He must survive the 26 intervening picks and land exactly there.
+    const star = POOL[0].id;
+    const e = engineOf({ seed: 4 });
+    const at = e.pickAt(3, 7)!; // overall pick Team 7 owns in round 3
+    e.force(at, star);
+    expect(e.availablePlayers().some((p) => p.id === star)).toBe(false); // reserved, off the pool
+    e.runToCompletion();
+    const there = e.completed.find((c) => c.overall === at)!;
+    expect(there.playerId).toBe(star);
+    expect(there.teamSlot).toBe(7);
+    expect(e.completed.filter((c) => c.playerId === star)).toHaveLength(1); // placed exactly once
+  });
+
+  it('counts a pin toward its team roster the moment it is set (like a keeper)', () => {
+    const e = engineOf({ seed: 4 });
+    const star = e.availablePlayers()[0];
+    e.force(e.pickAt(3, 7)!, star.id); // pin the top player to Team 7
+    expect(e.teamPlayerIds(7)).toContain(star.id); // on the roster before its pick
+    expect(e.rosterFor(7).counts[star.position]).toBe(1);
+    expect(e.teamPlayerIds(1)).not.toContain(star.id); // only its owner's roster
+  });
+
+  it('lands a pin on the human\'s OWN future slot (not overwritten when you get there)', () => {
+    // Human on the clock at 2.1 pins a player to their round-9 pick. A pinned slot
+    // is not a free choice, so the engine — not autoPickHuman / a manual draft —
+    // resolves it: isHumanOnClock is false there and step() commits the pin.
+    const e = engineOf({ humanSlot: 1, seed: 4 });
+    e.runToCompletion();
+    e.makePick(e.availablePlayers()[0].id); e.runToCompletion(); // now at 2.1
+    const star = e.availablePlayers()[3].id;
+    const at = e.pickAt(9, 1)!;
+    e.force(at, star);
+    // Drive the board as the store does: draft on your clock, engine resolves the rest.
+    while (!e.isComplete) e.isHumanOnClock ? e.makePick(e.availablePlayers()[0].id) : e.step();
+    const there = e.completed.find((c) => c.overall === at)!;
+    expect(there.playerId).toBe(star);
+    expect(there.teamSlot).toBe(1);
+  });
+});
+
 describe('Time machine (heist)', () => {
   it('rewinds a heisted pick to the LATEST bot that had the player in its top 15', () => {
     const e = engineOf({ humanSlot: 3, seed: 1 });

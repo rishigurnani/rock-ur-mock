@@ -277,51 +277,50 @@ function PlayerInspector({
         💀 Injure (proj → 0)
       </button>
 
-      {!started && (
-        <>
-          <div className="row" style={{ marginTop: 10 }}>
-            <label>Keeper</label>
-            <span>
-              <select {...tourAnchor('keeper-team')} value={team} onChange={(e) => setTeam(Number(e.target.value))}>
-                {range1(teamCount).map((t) => (
-                  <option key={t} value={t}>T{t}</option>
-                ))}
-              </select>{' '}
-              <select {...tourAnchor('keeper-round')} value={round} onChange={(e) => setRound(Number(e.target.value))}>
-                {range1(roundCount).map((r) => (
-                  <option key={r} value={r}>R{r}</option>
-                ))}
-              </select>{' '}
-              <input
-                {...tourAnchor('keeper-pct')}
-                type="number"
-                min={1}
-                max={100}
-                value={keepPct}
-                onChange={(e) => setKeepPct(Number(e.target.value))}
-                style={{ width: 55 }}
-                title="Chance this keeper is actually kept (each mock re-rolls it)"
-              />%
-            </span>
-          </div>
-          <button
-            {...tourAnchor('keeper-save')}
-            className="mini primary"
-            style={{ width: '100%', marginTop: 6 }}
-            onClick={() => store.setKeeper(round, team, player.id, keepPct / 100)}
-          >
-            🔒 Keep at T{team} R{round} ({keepPct}%)
-          </button>
-          {keeper && (
-            <button
-              className="mini"
-              style={{ width: '100%', marginTop: 6 }}
-              onClick={() => store.setKeeper(keeper.round, keeper.teamSlot, player.id, 0)}
-            >
-              ✕ Remove keeper
-            </button>
+      {/* Same team/round target, two lives: a keeper cell pre-draft, a forced pin once live. */}
+      <div className="row" style={{ marginTop: 10 }}>
+        <label>{started ? 'Fix to' : 'Keeper'}</label>
+        <span>
+          <select {...tourAnchor('keeper-team')} value={team} onChange={(e) => setTeam(Number(e.target.value))}>
+            {range1(teamCount).map((t) => (
+              <option key={t} value={t}>T{t}</option>
+            ))}
+          </select>{' '}
+          <select {...tourAnchor('keeper-round')} value={round} onChange={(e) => setRound(Number(e.target.value))}>
+            {range1(roundCount).map((r) => (
+              <option key={r} value={r}>R{r}</option>
+            ))}
+          </select>
+          {!started && (
+            <>{' '}<input
+              {...tourAnchor('keeper-pct')}
+              type="number"
+              min={1}
+              max={100}
+              value={keepPct}
+              onChange={(e) => setKeepPct(Number(e.target.value))}
+              style={{ width: 55 }}
+              title="Chance this keeper is actually kept (each mock re-rolls it)"
+            />%</>
           )}
-        </>
+        </span>
+      </div>
+      <button
+        {...tourAnchor('keeper-save')}
+        className="mini primary"
+        style={{ width: '100%', marginTop: 6 }}
+        onClick={() => started ? store.pinPlayer(round, team, player.id) : store.setKeeper(round, team, player.id, keepPct / 100)}
+      >
+        {started ? `📌 Fix at T${team} R${round}` : `🔒 Keep at T${team} R${round} (${keepPct}%)`}
+      </button>
+      {keeper && !started && (
+        <button
+          className="mini"
+          style={{ width: '100%', marginTop: 6 }}
+          onClick={() => store.setKeeper(keeper.round, keeper.teamSlot, player.id, 0)}
+        >
+          ✕ Remove keeper
+        </button>
       )}
     </div>
   );

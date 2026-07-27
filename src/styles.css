@@ -153,6 +153,7 @@ select, input {
 .cell .meta { color: var(--muted); font-size: 10px; }
 .cell.onclock { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cell.keeper { background: rgba(245, 158, 11, 0.12); }
+.cell.pinned { background: rgba(139, 92, 246, 0.16); }
 .cell.empty { color: var(--border); }
 
 .pos { display: inline-block; border-radius: 4px; padding: 0 4px; font-size: 10px; font-weight: 700; color: #0b0e14; background: var(--muted); }

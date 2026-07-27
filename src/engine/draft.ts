@@ -95,12 +95,23 @@ export class DraftEngine {
     }
   }
 
-  /** A team's roster = its completed picks + its not-yet-reached keepers. */
+  /** A team's roster = its completed picks + its not-yet-reached keepers and pins. */
   teamPlayerIds(slot: number): string[] {
     const done = this.completed.filter((c) => c.teamSlot === slot).map((c) => c.playerId);
     const have = new Set(done);
-    const keepers = (this.keepersBySlot.get(slot) ?? []).filter((id) => !have.has(id));
-    return [...done, ...keepers];
+    const reserved = [...(this.keepersBySlot.get(slot) ?? []), ...this.pins(slot)];
+    return [...done, ...reserved.filter((id) => !have.has(id))];
+  }
+
+  /** Players pinned live but not yet drafted — reserved exactly like keepers: held
+   *  out of the pool so nobody scoops them, and counted onto their owner's roster
+   *  from the moment the pin is set. Pass `slot` to get just that team's pins.
+   *  (Heisted pins commit at once, so they're never available and never listed.) */
+  private pins(slot?: number): string[] {
+    const out: string[] = [];
+    for (const [o, f] of this.forced)
+      if (this.available.has(f.playerId) && (slot == null || this.order[o - 1]?.owningTeamSlot === slot)) out.push(f.playerId);
+    return out;
   }
 
   private countsFor(slot: number): Record<Position, number> {
@@ -120,14 +131,19 @@ export class DraftEngine {
     return this.order[this.cursor] ?? null;
   }
 
-  /** Whose turn it is, and whether the engine expects a human to act. */
+  /** Whose turn it is. A pick the human owns but has force-pinned is predetermined
+   *  (engine resolves it, same condition step() commits under) — so it reads as NOT
+   *  the human's, keeping the pin safe from autoPickHuman / a manual draft there. */
   get isHumanOnClock(): boolean {
     const pick = this.currentPick;
-    return pick != null && pick.owningTeamSlot === this.humanSlot;
+    if (!pick || pick.owningTeamSlot !== this.humanSlot) return false;
+    const f = this.forced.get(pick.overall);
+    return !(f && this.available.has(f.playerId));
   }
 
   availablePlayers(): EffectivePlayer[] {
-    return [...this.available.values()];
+    const pinned = new Set(this.pins());
+    return [...this.available.values()].filter((p) => !pinned.has(p.id));
   }
 
   rosterFor(slot: number): RosterState {
@@ -212,9 +228,30 @@ export class DraftEngine {
     if (!hit) return false;
     this.lastHeist = { playerId: mine.playerId, teamSlot: hit.teamSlot };
     const trace = hit.shortlist?.find((s) => s.playerId === mine.playerId)?.trace; // the victim's own read on him
-    this.forced.set(hit.overall, { playerId: mine.playerId, trace }); // pin it (+ trace) so a later rewind re-applies it
-    this.rewindTo(hit.overall); this.runToCompletion();
+    this.force(hit.overall, mine.playerId, trace); // pin it (+ trace); rewinds so any later rewind re-applies it
+    this.runToCompletion();
     return true;
+  }
+
+  /** Pin `playerId` to pick `overall` and rewind there so the re-run commits it —
+   *  the shared mechanism behind the heist and a manual "fix to this slot" (re-applies
+   *  on any later rewind). Caller runs the board forward afterward. */
+  force(overall: number, playerId: string, trace?: CompletedPick['trace']): void {
+    this.forced.set(overall, { playerId, trace });
+    this.rewindTo(overall);
+  }
+
+  /** The overall pick a team owns in a round (null if it owns none — e.g. traded). */
+  pickAt(round: number, teamSlot: number): number | null {
+    return this.order.find((p) => p.round === round && p.owningTeamSlot === teamSlot)?.overall ?? null;
+  }
+
+  /** A player force-pinned to `overall` but not yet drafted there — the pending pin
+   *  the board previews before the slot is reached (null once committed, so a
+   *  heisted pick never shows as pending). */
+  pinnedAt(overall: number): string | null {
+    const f = this.forced.get(overall);
+    return f && this.available.has(f.playerId) ? f.playerId : null;
   }
 
   /** The LATEST bot pick since your last ON-THE-CLOCK turn whose top-15 board held
