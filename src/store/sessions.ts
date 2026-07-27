@@ -20,6 +20,7 @@ export interface Snapshot extends Pick<DraftStore, 'datasetId' | 'players' | 'co
   schema?: number; // format version; absent = a pre-versioning (legacy) save
   cells: MatrixCell[];
   picks: string[];
+  loves?: string[]; // player ids the manager hearted (absent in legacy saves)
 }
 export interface SessionRec { id: string; name: string; savedAt: number; status: string; snap: Snapshot; }
 

@@ -163,7 +163,7 @@ export function restoreState(snap: Snapshot, version: number): Partial<DraftStor
     modifiers: snap.modifiers, teams: snap.teams, cells,
     humanSlot: snap.humanSlot, seed: snap.seed,
   };
-  return { ...base, engine: snap.started ? buildEngine(base, snap.picks) : null, started: snap.started, version };
+  return { ...base, engine: snap.started ? buildEngine(base, snap.picks) : null, started: snap.started, loves: new Set(snap.loves ?? []), version };
 }
 
 export function snapshot(s: DraftStore): Snapshot {
@@ -173,6 +173,7 @@ export function snapshot(s: DraftStore): Snapshot {
     teams: s.teams, humanSlot: s.humanSlot, seed: s.seed, started: s.started,
     cells: [...s.cells.values()],
     picks: s.engine ? s.engine.completed.map((c) => c.playerId) : [],
+    loves: [...s.loves],
   };
 }
 
@@ -188,6 +189,7 @@ export interface DraftStore {
 
   engine: DraftEngine | null;
   started: boolean;
+  loves: Set<string>; // player ids the manager hearted (the LUV pool filter); rides the snapshot
   version: number; // bump to force re-render after imperative engine mutation
   dirty: boolean; // an in-progress draft has unsaved changes (guards data loss)
   activeSessionId: string | null; // the loaded saved session (null = unsaved/new board)
@@ -202,6 +204,7 @@ export interface DraftStore {
   setBrain: (slot: number, brain: Brain) => void;
   setKeeper: (round: number, teamSlot: number, playerId: string, prob?: number) => void;
   overridePlayer: (playerId: string, patch: Partial<Pick<Player, 'adp' | 'projPoints'>>) => void;
+  toggleLove: (playerId: string) => void;
 
   // sessions (draft log)
   saveSession: (name: string) => void;
@@ -298,6 +301,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
 
   engine: null,
   started: false,
+  loves: new Set(),
   version: 0,
   dirty: false,
   activeSessionId: null,
@@ -325,6 +329,9 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
 
   overridePlayer: (playerId, patch) =>
     set((s) => ({ players: s.players.map((p) => (p.id === playerId ? { ...p, ...patch } : p)) })),
+
+  // Toggle a player's heart. `Set.delete` returns false when it wasn't loved → add it.
+  toggleLove: (playerId) => set((s) => { const loves = new Set(s.loves); if (!loves.delete(playerId)) loves.add(playerId); return { loves }; }),
 
   start: () => startDraft(set),
   saveSession: (name) => persistSession(name, get, set),

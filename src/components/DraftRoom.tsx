@@ -5,7 +5,9 @@ import { indexById, range1, playerMeta, matchesQuery } from '../lib/util';
 import type { Player, Position } from '../types';
 import { tourAnchor } from '../tour/tour-types';
 
-const POSITIONS: (Position | 'ALL')[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+/** Pool quick-filters: ALL, each position, and LUV (the manager's hearted players). */
+type PoolFilter = Position | 'ALL' | 'LUV';
+const POSITIONS: PoolFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST', 'LUV'];
 
 /** One optimized-lineup seat: its slot, the seated player (or an empty marker),
  *  bye, and projected points. Extracted so the lineup map stays a one-liner. */
@@ -23,7 +25,7 @@ function StarterRow({ seat: { player, slot } }: { seat: LineupSeat }) {
 export function DraftRoom() {
   const store = useDraftStore();
   const { engine, players, started, config } = store;
-  const [filter, setFilter] = useState<Position | 'ALL'>('ALL');
+  const [filter, setFilter] = useState<PoolFilter>('ALL');
   const [query, setQuery] = useState('');
   const [rosterSlot, setRosterSlot] = useState(store.humanSlot ?? 1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -80,7 +82,7 @@ export function DraftRoom() {
   // lib/util) working alongside the quick position-filter buttons.
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = available
-    .filter((p) => filter === 'ALL' || p.position === filter)
+    .filter((p) => filter === 'ALL' || (filter === 'LUV' ? store.loves.has(p.id) : p.position === filter))
     .filter((p) => matchesQuery(p, tokens))
     .sort((a, b) => a.adp - b.adp)
     .slice(0, 80);
@@ -188,6 +190,13 @@ export function DraftRoom() {
             </span>
             <span className="num">ADP {p.adp}</span>
             <span className="num">{p.projPoints} pts</span>
+            <button
+              className="mini"
+              title={store.loves.has(p.id) ? 'Remove love' : 'Love'}
+              onClick={(e) => { e.stopPropagation(); store.toggleLove(p.id); }}
+            >
+              {store.loves.has(p.id) ? '❤️' : '🤍'}
+            </button>
             {started ? (
               <button
                 className="mini primary"

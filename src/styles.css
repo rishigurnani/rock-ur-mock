@@ -172,6 +172,8 @@ select, input {
 
 /* Player pool */
 .pool { max-height: 520px; overflow-y: auto; }
+/* Pool rows carry an extra control (the love heart) beyond the base 5-column row. */
+.pool .player-row { grid-template-columns: 28px 1fr auto auto auto auto; }
 .player-row {
   display: grid; grid-template-columns: 28px 1fr auto auto auto; gap: 8px;
   align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border);

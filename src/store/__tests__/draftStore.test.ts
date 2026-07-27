@@ -25,7 +25,7 @@ function preDraftWithKeepers(): DraftStore {
   ]);
   return {
     datasetId: 'fp-2026', players: POOL, config: DEFAULT_LEAGUE, modifiers: [],
-    teams, humanSlot: 1, seed: 42, cells, engine: null, started: false, version: 0,
+    teams, humanSlot: 1, seed: 42, cells, engine: null, started: false, loves: new Set(), version: 0,
   } as unknown as DraftStore;
 }
 
@@ -132,6 +132,20 @@ describe('confirmDiscard — the unsaved-work gate', () => {
   it('asks, and honors the answer, when a draft is unsaved', () => {
     expect(confirmDiscard(true, 'Reset the board', () => false)).toBe(false); // user cancels
     expect(confirmDiscard(true, 'Reset the board', () => true)).toBe(true); // user confirms
+  });
+});
+
+describe('Player loves (LUV) persistence', () => {
+  it('hearted players ride the snapshot and restore', () => {
+    const s = { ...preDraftWithKeepers(), loves: new Set([KEEP_A, KEEP_B]) } as DraftStore;
+    const restored = restoreState(throughFile(snapshot(s)), 1).loves as Set<string>;
+    expect([...restored].sort()).toEqual([KEEP_A, KEEP_B].sort());
+  });
+
+  it('a legacy save with no loves field restores to an empty set', () => {
+    const snap = snapshot(preDraftWithKeepers());
+    delete (snap as { loves?: string[] }).loves; // pre-LUV save
+    expect((restoreState(throughFile(snap), 1).loves as Set<string>).size).toBe(0);
   });
 });
 
