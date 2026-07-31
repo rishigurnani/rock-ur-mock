@@ -58,20 +58,65 @@ if (typeof navigator !== 'undefined') void navigator.storage?.persist?.();
 // legit empty list '[]' — so losing one key can't silently wipe the log while the
 // mirror survives. (A full site-data clear takes both; Backup-all is the durable copy.)
 const BAK = SKEY + '~bak';
-/** Parse one stored log; null when the key is MISSING (lost/evicted) or corrupt so
- *  the caller tries the mirror, [] only for a stored (legit) empty list. */
+
+// --- Pool dedup (storage format v2) -----------------------------------------
+// Each draft embedded the full ~539-player pool; across many saves that's ~90%
+// duplicated bytes and it blew the browser's localStorage quota. Instead we keep a
+// few BASE pools once and store each draft's DIFF against the closest >60%-similar
+// base (else it becomes a new base). Transparent: listSessions rehydrates the full
+// snapshot, so export files and every caller still see the portable, self-contained shape.
+type Diff = { base: number; changed: Player[]; removed: string[] };
+type Packed = Omit<SessionRec, 'snap'> & { snap: Omit<Snapshot, 'players'> & { pool: Diff } };
+interface StoredLog { v: 2; bases: Player[][]; recs: Packed[] }
+
+/** Fraction of `pool` byte-identical (same id AND content) to base `b`. */
+function similarity(pool: Player[], b: Player[]): number {
+  const json = new Map(b.map((p) => [p.id, JSON.stringify(p)]));
+  return pool.length ? pool.filter((p) => json.get(p.id) === JSON.stringify(p)).length / pool.length : 1;
+}
+/** Diff `pool` against the closest >60%-similar base, else register it as a new base. */
+function diffPool(pool: Player[], bases: Player[][]): Diff {
+  let base = -1, best = 0.6;
+  bases.forEach((b, i) => { const s = similarity(pool, b); if (s > best) { best = s; base = i; } });
+  if (base < 0) base = bases.push(pool) - 1;
+  const json = new Map(bases[base].map((p) => [p.id, JSON.stringify(p)]));
+  const have = new Set(pool.map((p) => p.id));
+  return { base, changed: pool.filter((p) => json.get(p.id) !== JSON.stringify(p)), removed: bases[base].filter((p) => !have.has(p.id)).map((p) => p.id) };
+}
+function packLog(l: SessionRec[]): StoredLog {
+  const bases: Player[][] = [];
+  return { v: 2, bases, recs: l.map(({ snap: { players, ...snap }, ...r }) => ({ ...r, snap: { ...snap, pool: diffPool(players ?? [], bases) } })) };
+}
+function unpackLog(s: StoredLog): SessionRec[] {
+  return s.recs.map(({ snap: { pool, ...snap }, ...r }) => {
+    const removed = new Set(pool.removed), byId = new Map<string, Player>();
+    for (const p of s.bases[pool.base]) if (!removed.has(p.id)) byId.set(p.id, p);
+    for (const p of pool.changed) byId.set(p.id, p);
+    return { ...r, snap: { ...snap, players: [...byId.values()] } };
+  });
+}
+/** Decode a stored blob: a legacy full array, or the v2 deduped log (null = corrupt). */
+function decode(raw: string): SessionRec[] | null {
+  try { const d = JSON.parse(raw); return Array.isArray(d) ? d : d?.v === 2 ? unpackLog(d) : null; } catch { return null; }
+}
+
+/** Read one stored log; null when the key is MISSING (lost/evicted) or corrupt so the
+ *  caller tries the mirror, [] only for a stored (legit) empty list. */
 function readLog(key: string): SessionRec[] | null {
   const raw = localStorage.getItem(key);
-  if (raw == null) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  return raw == null ? null : decode(raw);
 }
 export function listSessions(): SessionRec[] {
   return readLog(SKEY) ?? readLog(BAK) ?? [];
 }
 export const writeSessions = (l: SessionRec[]) => {
-  const json = JSON.stringify(l);
-  localStorage.setItem(SKEY, json);
-  localStorage.setItem(BAK, json);
+  const json = JSON.stringify(packLog(l));
+  try { localStorage.setItem(SKEY, json); localStorage.setItem(BAK, json); }
+  catch (e) {
+    // Don't fail silently — and by rethrowing, don't let the caller mark it "saved".
+    if (typeof alert === 'function') alert('Storage is full — use "Backup all" to export your drafts, then delete old ones to free space.');
+    throw e;
+  }
 };
 
 /** Merge imported records into the log (incoming wins by id) — the Restore path. */
