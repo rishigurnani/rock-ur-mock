@@ -100,7 +100,7 @@ export function DraftRoom() {
 
       {started && humanOnClock && current && (
         <div key={`${current.overall}:${engine?.lastHeist?.playerId ?? ''}`} className="toast">
-          {engine?.lastHeist && <>🕵️ <strong>Heist!</strong> {playerById.get(engine.lastHeist.playerId)?.name} scooped by Team {engine.lastHeist.teamSlot}. </>}
+          {engine?.lastHeist?.atOverall === current.overall && <>🕵️ <strong>Heist!</strong> {playerById.get(engine.lastHeist.playerId)?.name} scooped by Team {engine.lastHeist.teamSlot}. </>}
           <strong>You're on the clock</strong> — Round {current.round}, Pick #{current.overall}. Pick a player below.
         </div>
       )}

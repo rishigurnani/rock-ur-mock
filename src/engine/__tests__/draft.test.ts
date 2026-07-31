@@ -322,7 +322,21 @@ describe('Time machine (heist)', () => {
     expect(e.completed[1].trace).toBeTruthy(); // heisted pick carries the bot's score breakdown (tooltip)
     expect(e.isHumanOnClock).toBe(true); // your clock again — p is gone
     expect(e.availablePlayers().some((x) => x.id === p)).toBe(false);
-    expect(e.lastHeist).toEqual({ playerId: p, teamSlot: bot2.teamSlot }); // recorded for the notice
+    expect(e.lastHeist).toEqual({ playerId: p, teamSlot: bot2.teamSlot, atOverall: e.currentPick!.overall }); // notice, tied to THIS re-pick clock
+  });
+
+  it('a user rewind past a heist clears the notice (no stale toast on the re-pick)', () => {
+    // The reported bug: get heisted, rewind back past the steal, and the "Heist!" toast
+    // reappeared when your clock came round again — for a heist that no longer stood.
+    const e = engineOf({ humanSlot: 3, seed: 1 });
+    e.runToCompletion();
+    const taken = new Set(e.completed.map((c) => c.playerId));
+    const p = shortlistIds(e.completed[1]).find((id) => !taken.has(id))!;
+    e.makePick(p);
+    expect(e.heist(1)).toBe(true);
+    expect(e.lastHeist).not.toBeNull();
+    e.rewindTo(1, true); // the user's rewind, back past the steal
+    expect(e.lastHeist).toBeNull(); // notice dismissed with the undone heist
   });
 
   it('heisting the same pick twice keeps both players placed', () => {

@@ -55,7 +55,9 @@ export class DraftEngine {
 
   cursor = 0;
   readonly completed: CompletedPick[] = [];
-  lastHeist: { playerId: string; teamSlot: number } | null = null; // set by heist(), for the UI notice
+  // The heist notice, or null. `atOverall` is the human re-pick clock it belongs to,
+  // so the UI shows it only there — it can't linger onto a later pick or a rewind.
+  lastHeist: { playerId: string; teamSlot: number; atOverall: number } | null = null;
   // Players pinned to a pick. `heist` marks a time-machine steal vs a manual user pin:
   // a heist's trace is recomputed honestly at commit and it's undone by a user rewind,
   // whereas a user pin persists and previews/counts on the board as a pending pin.
@@ -273,7 +275,7 @@ export class DraftEngine {
     if (!mine || mine.teamSlot !== this.humanSlot || this.rng() >= chance) return false;
     const hit = this.findHeistVictim(mine);
     if (!hit) return false;
-    this.lastHeist = { playerId: mine.playerId, teamSlot: hit.teamSlot };
+    this.lastHeist = { playerId: mine.playerId, teamSlot: hit.teamSlot, atOverall: mine.overall };
     this.force(hit.overall, mine.playerId, { heist: true }); // its trace is re-scored honestly at commit
     this.runToCompletion();
     return true;
@@ -334,9 +336,11 @@ export class DraftEngine {
     if (player && !keptPlayerId(this.order[done.overall - 1])) this.available.set(player.id, player);
   }
 
-  /** Drop every steal pinned at or after `overall` (a user rewind un-steals them). */
+  /** Drop every steal pinned at or after `overall` (a user rewind un-steals them) and
+   *  dismiss the heist notice — the event it announced is being undone. */
   private dropHeistsFrom(overall: number): void {
     for (const [o, f] of this.forced) if (o >= overall && f.heist) this.forced.delete(o);
+    this.lastHeist = null;
   }
 
   /** Run every remaining pick that isn't gated on the human seat. */
