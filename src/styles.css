@@ -79,9 +79,15 @@ select, input {
 .open-row { box-shadow: inset 3px 0 0 var(--accent); background: rgba(88, 166, 255, 0.08); border-radius: 4px; }
 /* Keep a row's trailing action buttons together on one line; the label truncates. */
 .row > span { flex-shrink: 0; white-space: nowrap; }
+/* Two-column grid: name (1fr, truncates) + a fixed right column so every Open/⤓/✕ lines up. */
+.draft-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.draft-row > label { min-width: 0; max-width: none; }
 /* Declutter the draft list: keep Open visible, reveal ⤓/✕ on hover or focus. */
 .draft-row span button ~ button { opacity: 0; visibility: hidden; transition: opacity .12s; }
 .draft-row:hover span button ~ button, .draft-row:focus-within span button ~ button { opacity: 1; visibility: visible; }
+/* Show ~6 most-recent drafts; scroll for the rest. 30px ≈ one .draft-row incl. margin. */
+.draft-list { max-height: 180px; overflow-y: auto; }
+.draft-list:not(:empty) { margin-bottom: 8px; }
 
 /* Mock Stats: a non-blocking slide-in rail pinned to the right edge. It covers
    the board, not the setup panel — so drafts stay selectable while it's open. */

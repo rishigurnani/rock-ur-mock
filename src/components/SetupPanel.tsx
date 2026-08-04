@@ -245,7 +245,8 @@ export function SetupPanel() {
           </span>
         </div>
         {listSessions().length > 1 && <div className="row"><input placeholder='Search saved drafts...' value={draftQ} onChange={(e) => setDraftQ(e.target.value)} style={{ flex: 1 }} /></div>}
-        {(draftQ.trim() ? listSessions().filter((sn) => matchesBool(sessionSearchText(sn), draftQ)) : listSessions()).map((sn) => {
+        <div className="draft-list">
+        {(draftQ.trim() ? listSessions().filter((sn) => matchesBool(sessionSearchText(sn), draftQ)) : listSessions()).slice().sort((a, b) => b.savedAt - a.savedAt).map((sn) => {
           const open = sn.id === store.activeSessionId;
           return (
           <div className={'row draft-row' + (open ? ' open-row' : '')} key={sn.id}>
@@ -266,6 +267,7 @@ export function SetupPanel() {
           </div>
           );
         })}
+        </div>
         <input
           ref={importRef}
           type="file"
